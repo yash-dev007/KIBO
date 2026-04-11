@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QApplication, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QLabel, QMenu, QSizePolicy,
+    QApplication, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QLabel, QMenu, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
 
@@ -259,6 +259,86 @@ class SpeechBubble(QWidget):
         painter.drawPath(path)
 
 
+class AboutDialog(QWidget):
+    """
+    A premium dark glass frameless dialog showing information about KIBO.
+    """
+
+    def __init__(self, pet_name: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(320, 200)
+
+        # Drop shadow
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 200))
+        shadow.setOffset(0, 6)
+        self.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        # Header
+        header = QLabel(f"About {pet_name}")
+        header.setFont(QFont("Outfit", 14, QFont.Bold))
+        header.setStyleSheet("color: #FFFFFF;")
+        header.setAlignment(Qt.AlignCenter)
+
+        # Version & Details
+        details = QLabel(
+            "Version 1.1.0\n"
+            "An AI-Powered Desktop Companion.\n\n"
+            "<a href='https://github.com/yash-dev007/KIBO' style='color: #A8F0A8; text-decoration: none;'>View on GitHub</a>"
+        )
+        details.setOpenExternalLinks(True)
+        details.setFont(QFont("Segoe UI", 10))
+        details.setStyleSheet("color: #CCCCCC;")
+        details.setAlignment(Qt.AlignCenter)
+
+        # Close button
+        btn = QPushButton("Close")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 10);
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 6px;
+                color: #FFFFFF;
+                padding: 6px 0;
+                font-family: 'Outfit', 'Segoe UI';
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: rgba(144, 238, 144, 40);
+                border: 1px solid rgba(144, 238, 144, 80);
+                color: #A8F0A8;
+            }
+            QPushButton:pressed {
+                background: rgba(144, 238, 144, 20);
+            }
+        """)
+        btn.clicked.connect(self.close)
+
+        layout.addWidget(header)
+        layout.addSpacing(10)
+        layout.addWidget(details)
+        layout.addStretch()
+        layout.addWidget(btn)
+        self.setLayout(layout)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height(), 12, 12)
+
+        painter.setBrush(QColor(22, 24, 28, 240)) # Dark acrylic
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0))
+        painter.drawPath(path)
+
+
 class UIManager(QWidget):
     """
     Main transparent frameless window containing the pet sprite and speech bubble.
@@ -449,7 +529,7 @@ class UIManager(QWidget):
 
         pet_name = self._config.get("pet_name", "KIBO")
         about_action = QAction(f"About {pet_name}", self)
-        about_action.setEnabled(False)
+        about_action.triggered.connect(self._show_about_dialog)
         menu.addAction(about_action)
 
         menu.addSeparator()
@@ -473,6 +553,18 @@ class UIManager(QWidget):
         self.move(x, y)
         if self._bubble.isVisible():
             self._position_bubble()
+
+    def _show_about_dialog(self) -> None:
+        if not hasattr(self, "_about_dialog") or self._about_dialog is None:
+            pet_name = self._config.get("pet_name", "KIBO")
+            self._about_dialog = AboutDialog(pet_name, self)
+        
+        # Center the dialog on the screen
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self._about_dialog.width()) // 2
+        y = (screen.height() - self._about_dialog.height()) // 2
+        self._about_dialog.move(x, y)
+        self._about_dialog.show()
 
     # ------------------------------------------------------------------
     # Startup position
