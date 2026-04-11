@@ -59,9 +59,76 @@ class MessageBubble(QWidget):
         painter.drawPath(path)
 
 
+class ApprovalWidget(QWidget):
+    def __init__(self, task: dict, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.task_id = task["id"]
+        self.approved = False
+        self.resolved = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+
+        title_label = QLabel(f"Task Approval: {task.get('title', 'Unknown Task')}")
+        title_label.setWordWrap(True)
+        title_label.setFont(QFont("Outfit", 10, QFont.Bold))
+        title_label.setStyleSheet("color: white;")
+        layout.addWidget(title_label)
+
+        desc_label = QLabel(task.get("description", ""))
+        desc_label.setWordWrap(True)
+        desc_label.setFont(QFont("Outfit", 9))
+        desc_label.setStyleSheet("color: #CCCCCC;")
+        layout.addWidget(desc_label)
+
+        btn_layout = QHBoxLayout()
+        self.approve_btn = QPushButton("Run")
+        self.approve_btn.setCursor(Qt.PointingHandCursor)
+        self.approve_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 255, 136, 40);
+                color: white;
+                border: 1px solid rgba(0, 255, 136, 100);
+                border-radius: 4px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover { background: rgba(0, 255, 136, 80); }
+        """)
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 100, 100, 40);
+                color: white;
+                border: 1px solid rgba(255, 100, 100, 100);
+                border-radius: 4px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover { background: rgba(255, 100, 100, 80); }
+        """)
+        
+        btn_layout.addWidget(self.approve_btn)
+        btn_layout.addWidget(self.cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height(), 8, 8)
+
+        painter.setBrush(QColor(255, 200, 0, 20)) # yellowish tint
+        painter.setPen(QPen(QColor(255, 200, 0, 60), 1.0))
+        painter.drawPath(path)
+
+
 class ChatWindow(QWidget):
     message_sent = Signal(str)
     closed = Signal()
+    task_approved = Signal(str)
+    task_cancelled = Signal(str)
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -77,6 +144,42 @@ class ChatWindow(QWidget):
         
         self._current_ai_bubble: Optional[MessageBubble] = None
         self._session_history = []
+        
+    @Slot(dict)
+    def show_approval_prompt(self, task: dict) -> None:
+        widget = ApprovalWidget(task, self)
+        
+        def on_approve():
+            if not widget.resolved:
+                widget.resolved = True
+                widget.approve_btn.setEnabled(False)
+                widget.cancel_btn.setEnabled(False)
+                widget.approve_btn.setText("Approved")
+                self.task_approved.emit(task["id"])
+                
+        def on_cancel():
+            if not widget.resolved:
+                widget.resolved = True
+                widget.approve_btn.setEnabled(False)
+                widget.cancel_btn.setEnabled(False)
+                widget.cancel_btn.setText("Cancelled")
+                self.task_cancelled.emit(task["id"])
+                
+        widget.approve_btn.clicked.connect(on_approve)
+        widget.cancel_btn.clicked.connect(on_cancel)
+        
+        container = QWidget()
+        l = QHBoxLayout(container)
+        l.setContentsMargins(0,0,0,0)
+        l.addStretch()
+        l.addWidget(widget)
+        l.addStretch()
+        
+        self.scroll_layout.addWidget(container)
+        self._scroll_to_bottom()
+        
+        if not self.isVisible():
+            self.show()
         
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)

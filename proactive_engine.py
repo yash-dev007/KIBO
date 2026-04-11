@@ -115,6 +115,34 @@ class ProactiveEngine(QObject):
     def on_sensor_update(self, data: SensorData) -> None:
         self._battery_percent = data.battery_percent
 
+    @Slot(list)
+    def on_calendar_updated(self, events: list[dict]) -> None:
+        if not events:
+            self._next_meeting_minutes = -1
+            return
+            
+        now = datetime.datetime.now()
+        next_event = events[0]
+        try:
+            start = datetime.datetime.fromisoformat(next_event.get("start_time", ""))
+            diff = (start - now).total_seconds() / 60.0
+            if diff > 0:
+                self._next_meeting_minutes = int(diff)
+            else:
+                self._next_meeting_minutes = -1
+        except Exception:
+            self._next_meeting_minutes = -1
+
+    @Slot(dict)
+    def on_task_completed(self, task: dict) -> None:
+        self._tasks_done_today += 1
+        self._tasks_pending = max(0, self._tasks_pending - 1)
+
+    @Slot(dict)
+    def on_task_blocked(self, task: dict) -> None:
+        self._tasks_blocked += 1
+        self._tasks_pending = max(0, self._tasks_pending - 1)
+
     def _on_tick(self) -> None:
         if not self._config.get("proactive_enabled", True):
             return
@@ -135,10 +163,6 @@ class ProactiveEngine(QObject):
         )
 
         for rule in RULES:
-            # We only evaluate Phase 1 and 2 rules for now
-            if rule.enabled_phase <= 2 and rule.condition(ctx):
+            if rule.enabled_phase <= 3 and rule.condition(ctx):
                 self.proactive_notification.emit(rule.type, rule.message(ctx), rule.priority)
-                # Route evaluates cooldowns internally. We emit, and the router decides whether to approve.
-                # But wait, if router blocks it, should we try the next rule?
-                # The spec says "priority-ordered, first match wins", so we break regardless.
                 break

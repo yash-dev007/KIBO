@@ -24,6 +24,8 @@ from memory_store import MemoryStore
 from notification_router import NotificationRouter
 from proactive_engine import ProactiveEngine
 from settings_window import SettingsWindow
+from task_runner import TaskRunner
+from calendar_manager import CalendarManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +65,7 @@ def main() -> int:
     chat_window = ChatWindow(config)
     memory_store = MemoryStore(config)
     settings_window = SettingsWindow(config)
+    calendar_manager = CalendarManager(config)
 
     # ── Core Wiring ───────────────────────────────────────────────────
     system_monitor.sensor_update.connect(brain.on_sensor_update)
@@ -83,6 +86,8 @@ def main() -> int:
     
     # Settings window
     ui.show_settings.connect(settings_window.show)
+    settings_window.settings_changed.connect(ui.on_config_changed)
+    settings_window.settings_changed.connect(system_monitor.on_config_changed)
     
     # Reset pet position
     tray.reset_position.connect(ui._reset_position)
@@ -96,6 +101,7 @@ def main() -> int:
     voice_thread = None
     ai_thread = None
     tts_thread = None
+    task_runner = None
 
     if ai_enabled:
         from ai_client import AIThread
@@ -107,6 +113,7 @@ def main() -> int:
         voice_thread = VoiceThread(config)
         ai_thread = AIThread(config, memory_store=memory_store)
         tts_thread = TTSThread(config)
+        task_runner = TaskRunner(config, ai_client=ai_thread.client)
 
         # ── Chat input → AI (queued, thread-safe) ─────────────────────────
         chat_window.message_sent.connect(brain.on_thinking_started)
@@ -116,6 +123,7 @@ def main() -> int:
                 Qt.QueuedConnection, Q_ARG(str, t)
             )
         )
+        chat_window.message_sent.connect(proactive_engine.update_last_interaction)
 
         # Hotkey -> Brain (listening) + VoiceThread (record)
         hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
@@ -148,18 +156,33 @@ def main() -> int:
 
         # TTS done -> back to sensor-driven state
         tts_thread.speech_done.connect(brain.on_ai_done)
+        
+        # ── Task Runner ───────────────────────────────────────────────────
+        task_runner.task_completed.connect(proactive_engine.on_task_completed)
+        task_runner.task_blocked.connect(proactive_engine.on_task_blocked)
+        task_runner.task_blocked.connect(
+            lambda task: chat_window.show_approval_prompt(task) if task.get("error") == "awaiting_approval" else None
+        )
+        chat_window.task_approved.connect(task_runner.approve_task)
+        chat_window.task_cancelled.connect(task_runner.cancel_task)
 
         voice_thread.start()
         ai_thread.start()
         tts_thread.start()
         hotkey_thread.start()
+        task_runner.start()
 
         logger.info("AI enabled. Press %s to talk to KIBO.", config["activation_hotkey"])
     else:
         logger.info("AI disabled. KIBO will react to system state only.")
 
+    # ── Calendar → Proactive ──────────────────────────────────────────
+    calendar_manager.events_updated.connect(proactive_engine.on_calendar_updated)
+
     # --- Start core ---
     system_monitor.start()
+    calendar_manager.start()
+    proactive_engine.start()
     ui.place_on_screen()
     ui.show()
 
@@ -173,6 +196,8 @@ def main() -> int:
 
     # --- Cleanup ---
     system_monitor.stop()
+    calendar_manager.stop()
+    proactive_engine.stop()
     if hotkey_thread:
         hotkey_thread.stop()
     if voice_thread:
@@ -181,6 +206,8 @@ def main() -> int:
         ai_thread.stop()
     if tts_thread:
         tts_thread.stop()
+    if task_runner:
+        task_runner.stop()
 
     return exit_code
 

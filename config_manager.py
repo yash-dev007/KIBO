@@ -90,6 +90,8 @@ DEFAULT_CONFIG: dict = {
         "email-alert": True,
         "task-blocked": True
     },
+    "calendar_provider": "none",
+    "calendar_lookahead_minutes": 60,
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
