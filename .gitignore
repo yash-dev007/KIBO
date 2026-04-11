@@ -28,3 +28,8 @@ build/
 dist/
 *.spec
 
+# Reference projects (local analysis only — never commit)
+REF_PROJECT/
+
+# Worktrees
+.worktrees/

@@ -17,6 +17,8 @@ from typing import Optional
 import httpx
 from PySide6.QtCore import QObject, QThread, Signal
 
+from memory_store import MemoryStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,9 +32,10 @@ class AIClient(QObject):
     response_done = Signal(str)    # emitted once with full response text
     error_occurred = Signal(str)
 
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
+    def __init__(self, config: dict, memory_store: Optional[MemoryStore] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._config = config
+        self._memory_store = memory_store
         self._history: list[dict] = []
         self._base_url = config.get("ollama_base_url", "http://localhost:11434")
         self._model = config.get("ollama_model", "qwen2.5-coder:7b")
@@ -62,7 +65,13 @@ class AIClient(QObject):
         self._history.append({"role": "user", "content": user_text})
         self._trim_history()
 
-        messages = [{"role": "system", "content": self._system_prompt}] + self._history
+        memory_context = self._memory_store.build_memory_prompt(user_text) if self._memory_store else ""
+        if memory_context:
+            system = self._system_prompt + "\n\nWhat you remember:\n" + memory_context
+        else:
+            system = self._system_prompt
+
+        messages = [{"role": "system", "content": system}] + self._history
 
         payload = {
             "model": self._model,
@@ -127,9 +136,9 @@ class AIThread(QThread):
     response_done = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
+    def __init__(self, config: dict, memory_store: Optional[MemoryStore] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._client = AIClient(config)
+        self._client = AIClient(config, memory_store)
         self._client.moveToThread(self)
         self._client.response_chunk.connect(self.response_chunk)
         self._client.response_done.connect(self.response_done)

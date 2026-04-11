@@ -32,152 +32,14 @@ from PySide6.QtWidgets import (
 )
 
 from brain import BrainOutput, PetState
-from config_manager import get_app_root
+from config_manager import get_bundle_dir
+from animation_engine import VideoAnimationController
 
 logger = logging.getLogger(__name__)
 
-ASSETS_DIR = get_app_root() / "assets" / "animations"
+ASSETS_DIR = get_bundle_dir() / "assets" / "animations"
 
 CROSSFADE_MS = 150
-
-
-class AnimationController:
-    """
-    Loads PNG frame sequences for each state and cycles them.
-    Supports looping and one-shot playback with crossfade transitions.
-    """
-
-    def __init__(self, size: QSize, frame_rate_ms: int, skin: str) -> None:
-        self._size = size
-        self._frame_rate_ms = frame_rate_ms
-        self._skin = skin
-        self._frames: dict[str, list[QPixmap]] = {}
-        self._current_animation: str = "idle"
-        self._frame_index: int = 0
-        self._loop: bool = True
-        self._on_frame_change = None  # callable(QPixmap)
-        self._on_animation_finished = None  # callable()
-
-        self._timer = QTimer()
-        self._timer.timeout.connect(self._next_frame)
-
-    def set_frame_callback(self, callback) -> None:
-        self._on_frame_change = callback
-
-    def set_finished_callback(self, callback) -> None:
-        self._on_animation_finished = callback
-
-    def _resolve_animation_path(self, name: str) -> Optional[Path]:
-        """Resolve animation name to a directory, checking skin prefix first.
-
-        For 'actions/X' → look for {skin}_action_X/
-        For 'intro/X'  → look for {skin}_intro_X/
-        For plain name  → look for {skin}_{name}/ then {name}/
-        """
-        if "/" in name:
-            category, clip = name.split("/", 1)
-            # category is 'actions' or 'intro' — map to singular form for folder prefix
-            folder_prefix = category.rstrip("s")  # actions→action, intro→intro
-            skin_dir = ASSETS_DIR / f"{self._skin}_{folder_prefix}_{clip}"
-            if skin_dir.exists():
-                return skin_dir
-            # Fallback: try without skin prefix
-            plain_dir = ASSETS_DIR / f"{folder_prefix}_{clip}"
-            if plain_dir.exists():
-                return plain_dir
-            return None
-
-        # Plain animation name (e.g. "idle", "happy")
-        skin_dir = ASSETS_DIR / f"{self._skin}_{name}"
-        if skin_dir.exists():
-            return skin_dir
-        plain_dir = ASSETS_DIR / name
-        if plain_dir.exists():
-            return plain_dir
-        return None
-
-    def load_animation(self, name: str) -> bool:
-        """Load PNG frames for an animation. Returns True if found."""
-        if name in self._frames:
-            return True
-
-        state_dir = self._resolve_animation_path(name)
-        if state_dir is None or not state_dir.exists():
-            logger.warning("Animation dir not found for: %s", name)
-            return False
-
-        frames = sorted(state_dir.glob("frame_*.png"))
-        if not frames:
-            logger.warning("No frames found in: %s", state_dir)
-            return False
-
-        pixmaps = []
-        for f in frames:
-            pm = QPixmap(str(f)).scaled(
-                self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            pixmaps.append(pm)
-
-        self._frames[name] = pixmaps
-        logger.debug("Loaded %d frames for animation '%s' from %s.",
-                      len(pixmaps), name, state_dir.name)
-        return True
-
-    def preload_all(self) -> None:
-        """Preload every state directory found under assets/animations/."""
-        if not ASSETS_DIR.exists():
-            logger.warning("Assets directory not found: %s", ASSETS_DIR)
-            return
-        for state_dir in ASSETS_DIR.iterdir():
-            if state_dir.is_dir():
-                # Use plain folder name for non-skin-prefixed dirs
-                self.load_animation(state_dir.name)
-
-    def switch_to(self, name: str, loop: bool = True) -> None:
-        if name == self._current_animation and loop == self._loop:
-            return
-        if name not in self._frames:
-            if not self.load_animation(name):
-                logger.warning("Falling back to 'idle' — no frames for '%s'.", name)
-                name = "idle"
-                if name not in self._frames:
-                    return
-
-        self._current_animation = name
-        self._frame_index = 0
-        self._loop = loop
-        self._show_current_frame()
-
-    def start(self) -> None:
-        self._timer.start(self._frame_rate_ms)
-
-    def stop(self) -> None:
-        self._timer.stop()
-
-    def _next_frame(self) -> None:
-        frames = self._frames.get(self._current_animation)
-        if not frames:
-            return
-
-        next_index = self._frame_index + 1
-
-        if next_index >= len(frames):
-            if self._loop:
-                next_index = 0
-            else:
-                # One-shot finished — stay on last frame and notify
-                if self._on_animation_finished:
-                    self._on_animation_finished()
-                return
-
-        self._frame_index = next_index
-        self._show_current_frame()
-
-    def _show_current_frame(self) -> None:
-        frames = self._frames.get(self._current_animation)
-        if not frames or self._on_frame_change is None:
-            return
-        self._on_frame_change(frames[self._frame_index])
 
 
 class SpeechBubble(QWidget):
@@ -348,6 +210,7 @@ class UIManager(QWidget):
 
     quit_requested = Signal()
     animation_finished = Signal()
+    pet_clicked = Signal()
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -376,14 +239,13 @@ class UIManager(QWidget):
         self._sprite.setGraphicsEffect(self._opacity_effect)
 
         # Animation controller
-        self._anim = AnimationController(
+        self._anim = VideoAnimationController(
             size=QSize(w, h),
-            frame_rate_ms=config.get("frame_rate_ms", 150),
             skin=skin,
+            frame_rate_ms=config.get("frame_rate_ms", 150),
         )
-        self._anim.set_frame_callback(self._on_frame)
-        self._anim.set_finished_callback(self._on_anim_finished)
-        self._anim.preload_all()
+        self._anim.frame_ready.connect(self._on_frame)
+        self._anim.animation_finished.connect(self._on_anim_finished)
         self._anim.switch_to("idle")
         self._anim.start()
 
@@ -493,6 +355,11 @@ class UIManager(QWidget):
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton and self._drag_pos is not None:
+            current_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            delta = (current_pos - self._drag_pos).manhattanLength()
+            if delta < 5:
+                self.pet_clicked.emit()
         self._drag_pos = None
 
     # ------------------------------------------------------------------
