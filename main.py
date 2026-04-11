@@ -21,6 +21,9 @@ from ui_manager import UIManager
 from tray_manager import TrayManager
 from chat_window import ChatWindow
 from memory_store import MemoryStore
+from notification_router import NotificationRouter
+from proactive_engine import ProactiveEngine
+from settings_window import SettingsWindow
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,16 +54,23 @@ def main() -> int:
                 config.get("buddy_skin", "skales"))
 
     # --- Core components (always created) ---
-    brain = Brain(config)
+    notification_router = NotificationRouter(config)
+    proactive_engine = ProactiveEngine(config, router=notification_router)
+    brain = Brain(config, router=notification_router)
     system_monitor = SystemMonitor(config)
     ui = UIManager(config)
     tray = TrayManager(config, app)
     chat_window = ChatWindow(config)
     memory_store = MemoryStore(config)
+    settings_window = SettingsWindow(config)
 
     # ── Core Wiring ───────────────────────────────────────────────────
     system_monitor.sensor_update.connect(brain.on_sensor_update)
+    system_monitor.sensor_update.connect(proactive_engine.on_sensor_update)
     brain.brain_output.connect(ui.on_brain_output)
+    
+    proactive_engine.proactive_notification.connect(notification_router.route)
+    notification_router.notification_approved.connect(lambda msg, _: ui._bubble.show_text(msg))
     
     # Animation finished signal → Brain (handles INTRO→IDLE and ACTING→IDLE)
     ui.animation_finished.connect(brain.on_animation_done)
@@ -71,11 +81,15 @@ def main() -> int:
     tray.quit_requested.connect(app.quit)
     ui.quit_requested.connect(app.quit)
     
+    # Settings window
+    ui.show_settings.connect(settings_window.show)
+    
     # Reset pet position
     tray.reset_position.connect(ui._reset_position)
 
     # ── Pet click → Chat ──────────────────────────────────────────────
     ui.pet_clicked.connect(chat_window.toggle)
+    ui.pet_clicked.connect(proactive_engine.update_last_interaction)
 
     # --- AI components (only when ai_enabled=true) ---
     hotkey_thread = None

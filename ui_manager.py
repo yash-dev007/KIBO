@@ -211,6 +211,7 @@ class UIManager(QWidget):
     quit_requested = Signal()
     animation_finished = Signal()
     pet_clicked = Signal()
+    show_settings = Signal()
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -397,9 +398,10 @@ class UIManager(QWidget):
         """)
 
         pet_name = self._config.get("pet_name", "KIBO")
-        about_action = QAction(f"About {pet_name}", self)
-        about_action.triggered.connect(self._show_about_dialog)
-        menu.addAction(about_action)
+        
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.show_settings.emit)
+        menu.addAction(settings_action)
 
         menu.addSeparator()
 

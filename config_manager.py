@@ -77,6 +77,19 @@ DEFAULT_CONFIG: dict = {
     "memory_enabled": True,
     "memory_model": "qwen2.5-coder:7b",
     "memory_max_facts": 200,
+    "proactive_enabled": True,
+    "quiet_hours_start": 22,
+    "quiet_hours_end": 7,
+    "notification_types": {
+        "morning-greeting": True,
+        "idle-checkin": True,
+        "eod-summary": True,
+        "cpu-panic": True,
+        "battery-low": True,
+        "meeting-reminder": True,
+        "email-alert": True,
+        "task-blocked": True
+    },
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
@@ -132,7 +145,8 @@ def _validate(cfg: dict) -> None:
 
     for int_key in ("poll_interval_ms", "frame_rate_ms", "speech_bubble_timeout_ms",
                     "cpu_panic_threshold", "sleepy_hour", "tts_rate",
-                    "conversation_history_limit", "battery_tired_threshold"):
+                    "conversation_history_limit", "battery_tired_threshold",
+                    "quiet_hours_start", "quiet_hours_end"):
         if not isinstance(cfg.get(int_key), int):
             default_val = DEFAULT_CONFIG[int_key]
             logger.warning("'%s' must be an int. Resetting to %s.", int_key, default_val)
@@ -143,6 +157,10 @@ def _validate(cfg: dict) -> None:
             default_val = DEFAULT_CONFIG[float_key]
             logger.warning("'%s' must be a number. Resetting to %s.", float_key, default_val)
             cfg[float_key] = default_val
+            
+    if not isinstance(cfg.get("notification_types"), dict):
+        logger.warning("'notification_types' must be a dict. Resetting to default.")
+        cfg["notification_types"] = dict(DEFAULT_CONFIG["notification_types"])
 
     # Validate buddy_skin
     skin = cfg.get("buddy_skin")

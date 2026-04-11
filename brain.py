@@ -78,6 +78,7 @@ class _Rule:
     condition: Callable[[SensorData, "Brain"], bool]
     target_state: PetState
     speech_text: Optional[str]
+    notification_type: Optional[str] = None
 
 
 class Brain(QObject):
@@ -90,9 +91,10 @@ class Brain(QObject):
 
     brain_output = Signal(BrainOutput)
 
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
+    def __init__(self, config: dict, router=None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._config = config
+        self._router = router
         # AI states are set directly by external callers, not sensor rules
         self._ai_state: Optional[PetState] = None
         self._rules = self._build_rules()
@@ -128,16 +130,19 @@ class Brain(QObject):
                 condition=lambda s, _: s.cpu_percent > cpu_thresh,
                 target_state=PetState.PANICKED,
                 speech_text="So many processes!",
+                notification_type="cpu-panic"
             ),
             _Rule(
                 condition=lambda s, _: s.current_hour >= sleepy_hour,
                 target_state=PetState.SLEEPY,
                 speech_text="Getting sleepy...",
+                notification_type="sleepy" # Not defined in router default, but we can add or leave
             ),
             _Rule(
                 condition=lambda s, _: any(w in s.active_window.lower() for w in studious_windows),
                 target_state=PetState.STUDIOUS,
                 speech_text="Let's code!",
+                notification_type="studious"
             ),
             _Rule(
                 condition=lambda s, _: (
@@ -145,6 +150,7 @@ class Brain(QObject):
                 ),
                 target_state=PetState.TIRED,
                 speech_text="Running low on battery...",
+                notification_type="battery-low"
             ),
             _Rule(
                 condition=lambda s, _: s.cpu_percent > 50,
@@ -302,16 +308,23 @@ class Brain(QObject):
 
         new_state = PetState.IDLE
         speech: Optional[str] = None
+        notification_type: Optional[str] = None
 
         for rule in self._rules:
             if rule.condition(sensor_data, self):
                 new_state = rule.target_state
                 speech = rule.speech_text
+                notification_type = rule.notification_type
                 break
 
         # Only emit speech on transitions; always emit output so UI stays current
         if new_state == self._current_state:
             speech = None
+
+        if speech and self._router and notification_type:
+            priority = "medium" if notification_type in ("cpu-panic", "battery-low") else "low"
+            if not self._router.route(notification_type, speech, priority):
+                speech = None
 
         self._current_state = new_state
         output = BrainOutput(
