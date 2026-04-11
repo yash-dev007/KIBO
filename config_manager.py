@@ -3,7 +3,6 @@ config_manager.py — Load and validate config.json with safe defaults.
 Returns an immutable MappingProxyType so config is never mutated at runtime.
 """
 
-import os
 import sys
 import json
 import re
@@ -16,14 +15,25 @@ logger = logging.getLogger(__name__)
 
 def get_app_root() -> Path:
     """
-    Get the directory where the application is running.
-    When frozen (PyInstaller), it returns the folder containing the EXE.
-    When running as script, it returns the folder containing config_manager.py.
+    Root for user-editable files (config.json) — always next to the EXE.
+    In dev mode, returns the project directory.
     """
     if getattr(sys, "frozen", False):
-        # Running as bundled EXE
         return Path(sys.executable).parent
-    # Running in dev mode
+    return Path(__file__).parent.absolute()
+
+
+def get_bundle_dir() -> Path:
+    """
+    Root for bundled read-only assets (PNG frames, etc.).
+    In PyInstaller builds, sys._MEIPASS points to the _internal/ folder
+    where datas are extracted. In dev mode, same as get_app_root().
+    """
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
+        return Path(sys.executable).parent
     return Path(__file__).parent.absolute()
 
 
@@ -74,7 +84,6 @@ def load_config(path: str = "config.json") -> types.MappingProxyType:
     if not config_path.exists():
         logger.warning("config.json not found at '%s', using defaults.", config_path)
         return types.MappingProxyType(merged)
-
 
     try:
         with config_path.open("r", encoding="utf-8") as f:

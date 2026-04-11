@@ -37,7 +37,6 @@ Signal flow (always, regardless of ai_enabled):
 
 import logging
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
@@ -61,8 +60,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    config_path = Path(__file__).parent / "config.json"
-    config = load_config(str(config_path))
+    config = load_config()  # path resolved via get_app_root() in config_manager
     ai_enabled = config.get("ai_enabled", True)
 
     logger.info("KIBO starting. Pet name: %s | AI: %s | Skin: %s",
@@ -116,9 +114,7 @@ def main() -> int:
         # AI response -> UI (streaming) + Brain (talking) + TTS
         ai_thread.response_chunk.connect(ui.on_response_chunk)
         ai_thread.response_done.connect(brain.on_talking_started)
-        ai_thread.response_done.connect(
-            lambda text: tts_thread.manager.speak(text)
-        )
+        ai_thread.response_done.connect(tts_thread.speak)
         ai_thread.error_occurred.connect(ui.on_ai_error)
         ai_thread.error_occurred.connect(lambda _: brain.on_ai_done())
 

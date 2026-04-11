@@ -14,14 +14,15 @@ import logging
 import random
 from dataclasses import dataclass
 from enum import Enum, auto
-from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from config_manager import get_bundle_dir
+
 logger = logging.getLogger(__name__)
 
-ASSETS_DIR = Path(__file__).parent / "assets" / "animations"
+ASSETS_DIR = get_bundle_dir() / "assets" / "animations"
 
 
 class PetState(Enum):
