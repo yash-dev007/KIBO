@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QApplication, QGraphicsOpacityEffect, QLabel, QMenu, QSizePolicy,
+    QApplication, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QLabel, QMenu, QSizePolicy,
     QVBoxLayout, QWidget,
 )
 
@@ -195,12 +195,19 @@ class SpeechBubble(QWidget):
         self._label = QLabel(self)
         self._label.setWordWrap(True)
         self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._label.setFont(QFont("Segoe UI", 9))
-        self._label.setStyleSheet("color: #222222; background: transparent; padding: 4px 8px;")
+        self._label.setFont(QFont("Outfit", 9, QFont.Bold))
+        self._label.setStyleSheet("color: #F8F9FA; background: transparent; padding: 4px 6px;")
         self._label.setMaximumWidth(220)
 
+        # Floating drop shadow for modern 3D UI
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 16)
+        layout.setContentsMargins(16, 12, 16, 20)
         layout.addWidget(self._label)
         self.setLayout(layout)
 
@@ -234,18 +241,21 @@ class SpeechBubble(QWidget):
 
         w = self.width()
         h = self.height()
-        tail = 10  # tail height
+        tail = 12  # tail height
+        radius = 12 # Bubble smooth corner radius
 
         path = QPainterPath()
-        path.addRoundedRect(0, 0, w, h - tail, 10, 10)
+        path.addRoundedRect(0, 0, w, h - tail, radius, radius)
         # Tail pointing downward at center
-        path.moveTo(w / 2 - 8, h - tail)
+        path.moveTo(w / 2 - 10, h - tail)
         path.lineTo(w / 2, h)
-        path.lineTo(w / 2 + 8, h - tail)
+        path.lineTo(w / 2 + 10, h - tail)
         path.closeSubpath()
 
-        painter.setBrush(QColor(255, 255, 240, 230))
-        painter.setPen(QPen(QColor(180, 180, 150), 1.5))
+        # Dark Glassmorphism background matching the Kibo premium UI plan
+        painter.setBrush(QColor(25, 28, 32, 230))
+        # Subtle white outline
+        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
         painter.drawPath(path)
 
 
@@ -411,17 +421,29 @@ class UIManager(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background: #f5f5f0;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                padding: 4px;
+                background: rgba(22, 24, 28, 230);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 8px;
+                padding: 6px;
+                font-family: 'Outfit', 'Segoe UI', sans-serif;
+                font-weight: 500;
+                font-size: 13px;
             }
             QMenu::item {
-                padding: 6px 20px;
+                padding: 8px 24px;
                 border-radius: 4px;
+                margin: 2px 0px;
             }
             QMenu::item:selected {
-                background: #e0e0d8;
+                background: rgba(144, 238, 144, 40); /* Skales Gecko Green Hover */
+                border: 1px solid rgba(144, 238, 144, 80);
+                color: #A8F0A8;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: rgba(255, 255, 255, 20);
+                margin: 4px 8px;
             }
         """)
 
