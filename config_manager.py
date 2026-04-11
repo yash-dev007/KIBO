@@ -3,6 +3,8 @@ config_manager.py — Load and validate config.json with safe defaults.
 Returns an immutable MappingProxyType so config is never mutated at runtime.
 """
 
+import os
+import sys
 import json
 import re
 import types
@@ -10,6 +12,20 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def get_app_root() -> Path:
+    """
+    Get the directory where the application is running.
+    When frozen (PyInstaller), it returns the folder containing the EXE.
+    When running as script, it returns the folder containing config_manager.py.
+    """
+    if getattr(sys, "frozen", False):
+        # Running as bundled EXE
+        return Path(sys.executable).parent
+    # Running in dev mode
+    return Path(__file__).parent.absolute()
+
 
 DEFAULT_CONFIG: dict = {
     "pet_name": "KIBO",
@@ -49,19 +65,16 @@ _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
 def load_config(path: str = "config.json") -> types.MappingProxyType:
     """
     Load config from the given JSON path and merge with DEFAULT_CONFIG.
-
-    Unknown keys in config.json are preserved (allows user extensions).
-    Missing keys fall back to defaults.
-    Malformed JSON logs an error and falls back entirely to defaults.
-
-    Returns an immutable MappingProxyType.
+    The path is resolved relative to the app root.
     """
-    config_path = Path(path)
+    app_root = get_app_root()
+    config_path = app_root / path
     merged = dict(DEFAULT_CONFIG)
 
     if not config_path.exists():
-        logger.warning("config.json not found at '%s', using defaults.", path)
+        logger.warning("config.json not found at '%s', using defaults.", config_path)
         return types.MappingProxyType(merged)
+
 
     try:
         with config_path.open("r", encoding="utf-8") as f:

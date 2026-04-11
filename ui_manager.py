@@ -32,10 +32,12 @@ from PySide6.QtWidgets import (
 )
 
 from brain import BrainOutput, PetState
+from config_manager import get_app_root
 
 logger = logging.getLogger(__name__)
 
-ASSETS_DIR = Path(__file__).parent / "assets" / "animations"
+ASSETS_DIR = get_app_root() / "assets" / "animations"
+
 CROSSFADE_MS = 150
 
 

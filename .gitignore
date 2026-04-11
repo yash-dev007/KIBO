@@ -21,6 +21,10 @@ Thumbs.db
 .claude/
 CLAUDE.md
 
-# Large raw assets/binaries
+# Assets & Builds
 ffmpeg.exe
 assets/webm/
+build/
+dist/
+*.spec
+
