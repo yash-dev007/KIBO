@@ -295,6 +295,18 @@ class UIManager(QWidget):
         self._bubble.show_text(message)
         self._position_bubble()
 
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        self._config = new_config
+        # Some settings like bubble timeout require restarting the bubble
+        # or other components. Here we handle what can be updated live.
+        self._bubble._timeout_ms = new_config.get("speech_bubble_timeout_ms", 5000)
+        self.setAttribute(Qt.WA_TranslucentBackground, not new_config.get("opaque_fallback", False))
+        
+        # If pet name changed, update window title
+        pet_name = new_config.get("pet_name", "KIBO")
+        self.setWindowTitle(pet_name)
+
     # ------------------------------------------------------------------
     # Crossfade
     # ------------------------------------------------------------------

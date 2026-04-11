@@ -88,6 +88,7 @@ def main() -> int:
     ui.show_settings.connect(settings_window.show)
     settings_window.settings_changed.connect(ui.on_config_changed)
     settings_window.settings_changed.connect(system_monitor.on_config_changed)
+    settings_window.clear_memory_requested.connect(memory_store.clear_all_facts)
     
     # Reset pet position
     tray.reset_position.connect(ui._reset_position)

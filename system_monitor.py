@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 import psutil
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from brain import SensorData
 
@@ -39,6 +39,14 @@ class SystemMonitor(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        self._config = new_config
+        interval = self._config["poll_interval_ms"]
+        if self._timer.isActive() and self._timer.interval() != interval:
+            self._timer.setInterval(interval)
+            logger.info("SystemMonitor interval updated to %dms.", interval)
 
     def _poll(self) -> None:
         cpu = psutil.cpu_percent(interval=None)

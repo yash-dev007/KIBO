@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import Optional, Dict, List
+import numpy as np
 
 from PySide6.QtCore import QObject, Signal, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QPixmap, QImage
@@ -204,9 +205,34 @@ class VideoAnimationController(QObject):
     def _on_video_frame_changed(self, frame: QVideoFrame) -> None:
         if not frame.isValid():
             return
+            
+        # Convert QVideoFrame to a QImage with transparency support
         image = frame.toImage()
         if not image.isNull():
-            # Apply smooth scaling to the requested size
+            # Force to ARGB32 to allow transparency manipulation
+            image = image.convertToFormat(QImage.Format.Format_ARGB32)
+            
+            # --- Chroma Keying using Numpy ---
+            # We assume the background color is at (0,0). 
+            # If the image has no alpha, we set all matching pixels to transparent.
+            
+            width, height = image.width(), image.height()
+            ptr = image.bits()
+            # Wrap image bits in a numpy array (B, G, R, A order for ARGB32)
+            arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))
+            
+            # Get background color from top-left pixel (RGB only)
+            bg_color = arr[0, 0, :3].copy()
+            
+            # Mask pixels that are close to the background color (tolerance = 40)
+            diff = np.abs(arr[:, :, :3].astype(np.int16) - bg_color.astype(np.int16))
+            mask = np.all(diff < 40, axis=-1)
+            
+            # Set alpha channel to 0 for background pixels
+            # Note: arr is a view into image.bits(), so this modifies the QImage directly!
+            arr[mask, 3] = 0
+            
+            # Create pixmap from the modified image
             pixmap = QPixmap.fromImage(image).scaled(
                 self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
@@ -219,3 +245,4 @@ class VideoAnimationController(QObject):
                 self._player.play()
             else:
                 self.animation_finished.emit()
+

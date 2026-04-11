@@ -167,3 +167,13 @@ class MemoryStore(QObject):
     def invalidate_cache(self) -> None:
         self._cache.clear()
         self._cache_time = 0.0
+
+    def clear_all_facts(self) -> None:
+        """Deletes all extracted memory JSON files."""
+        for p in self._memory_dir.glob("*.json"):
+            try:
+                p.unlink()
+            except Exception as e:
+                logger.error(f"Failed to delete memory {p.name}: {e}")
+        self.invalidate_cache()
+        self.facts_updated.emit()

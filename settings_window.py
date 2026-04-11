@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class SettingsWindow(QWidget):
     settings_changed = Signal(dict)
     closed = Signal()
+    clear_memory_requested = Signal()
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -165,6 +166,21 @@ class SettingsWindow(QWidget):
         self.f_memory_enabled = QCheckBox("Enable Smart Memory")
         layout.addRow("", self.f_memory_enabled)
         
+        self.btn_clear_memory = QPushButton("Clear Memory")
+        self.btn_clear_memory.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_memory.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 100, 100, 40);
+                border: 1px solid rgba(255, 100, 100, 100);
+                border-radius: 4px;
+                color: white;
+                padding: 4px 8px;
+            }
+            QPushButton:hover { background: rgba(255, 100, 100, 80); }
+        """)
+        self.btn_clear_memory.clicked.connect(self._on_clear_memory)
+        layout.addRow("", self.btn_clear_memory)
+        
         self.f_ollama_url = QLineEdit()
         layout.addRow("Ollama Base URL:", self.f_ollama_url)
         
@@ -175,6 +191,13 @@ class SettingsWindow(QWidget):
         layout.addRow("System Prompt:", self.f_system_prompt)
 
         self.tabs.addTab(tab, "AI")
+        
+    def _on_clear_memory(self) -> None:
+        reply = QMessageBox.question(self, 'Clear Memory', 'Are you sure you want to delete all KIBO memories?',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.clear_memory_requested.emit()
+            QMessageBox.information(self, 'Cleared', 'All memories have been cleared.')
 
     def _init_notifications_tab(self) -> None:
         tab = QWidget()
