@@ -37,6 +37,13 @@ def get_bundle_dir() -> Path:
     return Path(__file__).parent.absolute()
 
 
+def get_user_data_dir() -> Path:
+    """User data directory — persists across reinstalls."""
+    d = Path.home() / ".kibo"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 DEFAULT_CONFIG: dict = {
     "pet_name": "KIBO",
     "ai_enabled": True,
@@ -67,6 +74,9 @@ DEFAULT_CONFIG: dict = {
     "buddy_skin": "skales",
     "idle_action_interval_min_s": 30,
     "idle_action_interval_max_s": 60,
+    "memory_enabled": True,
+    "memory_model": "qwen2.5-coder:7b",
+    "memory_max_facts": 200,
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
