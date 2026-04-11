@@ -1,0 +1,33 @@
+{
+  "pet_name": "KIBO",
+  "ai_enabled": true,
+  "activation_hotkey": "ctrl+k",
+  "ollama_base_url": "http://localhost:11434",
+  "ollama_model": "qwen2.5-coder:7b",
+  "system_prompt": "You are KIBO, a helpful virtual pet assistant who lives on the user's desktop. Be concise, friendly, and slightly playful. Keep responses to 2-3 sentences unless the user asks for more detail.",
+  "conversation_history_limit": 10,
+  "tts_enabled": true,
+  "tts_rate": 175,
+  "poll_interval_ms": 3000,
+  "cpu_panic_threshold": 80,
+  "battery_tired_threshold": 20,
+  "sleepy_hour": 23,
+  "studious_windows": [
+    "Visual Studio Code",
+    "code"
+  ],
+  "frame_rate_ms": 16,
+  "window_size": [
+    200,
+    200
+  ],
+  "enable_speech_bubbles": true,
+  "speech_bubble_timeout_ms": 5000,
+  "recording_max_seconds": 8,
+  "silence_threshold_seconds": 1.5,
+  "whisper_model": "tiny.en",
+  "opaque_fallback": false,
+  "buddy_skin": "skales",
+  "idle_action_interval_min_s": 30,
+  "idle_action_interval_max_s": 60
+}

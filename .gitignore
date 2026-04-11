@@ -1,0 +1,26 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pytest
+.pytest_cache/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Claude/Agent Memory
+.claude/
+CLAUDE.md
+
+# Large raw assets/binaries
+ffmpeg.exe
+assets/webm/
