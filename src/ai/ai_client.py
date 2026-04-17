@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Optional
 
 import httpx
@@ -41,6 +42,7 @@ class AIClient(QObject):
         self._model = config.get("ollama_model", "qwen2.5-coder:7b")
         self._system_prompt = config.get("system_prompt", "You are KIBO, a helpful desktop assistant.")
         self._history_limit = int(config.get("conversation_history_limit", 10))
+        self._cancel_event = threading.Event()  # set from any thread to abort in-flight stream
 
     def check_ollama(self) -> bool:
         """Returns True if Ollama is reachable."""
@@ -51,12 +53,17 @@ class AIClient(QObject):
         except Exception:
             return False
 
+    def cancel_current(self) -> None:
+        """Thread-safe: set from any thread to abort the in-flight stream."""
+        self._cancel_event.set()
+
     @Slot(str)
     def send_query(self, user_text: str) -> None:
         """
         Slot: send user_text to Ollama and stream the response.
         Must be called on the thread this object lives on.
         """
+        self._cancel_event.clear()  # fresh start for this query
 
         self._history.append({"role": "user", "content": user_text})
         self._trim_history()
@@ -85,6 +92,12 @@ class AIClient(QObject):
                 ) as resp:
                     resp.raise_for_status()
                     for line in resp.iter_lines():
+                        if self._cancel_event.is_set():
+                            logger.info("Query cancelled — newer request pending")
+                            # Roll back the user turn so history stays consistent
+                            if self._history and self._history[-1]["role"] == "user":
+                                self._history.pop()
+                            return
                         if not line:
                             continue
                         try:
@@ -146,6 +159,10 @@ class AIThread(QThread):
     def send_query(self, text: str) -> None:
         # Called from main thread via queued connection
         self._client.send_query(text)
+
+    def cancel_current(self) -> None:
+        """Thread-safe: aborts the in-flight stream immediately."""
+        self._client.cancel_current()
 
     def stop(self) -> None:
         self.quit()

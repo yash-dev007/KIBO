@@ -7,7 +7,8 @@
     <a href="https://github.com/yash-dev007/KIBO/stargazers"><img src="https://img.shields.io/github/stars/yash-dev007/KIBO?style=for-the-badge&color=00FF88" alt="Stars" /></a>
     <a href="https://github.com/yash-dev007/KIBO/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License" /></a>
     <img src="https://img.shields.io/badge/Engine-WebM_Video-00FF88?style=for-the-badge&logo=youtube" alt="Engine" />
-    <img src="https://img.shields.io/badge/UI-Glassmorphism-16181C?style=for-the-badge&logo=windowsterminal" alt="UI" />
+    <img src="https://img.shields.io/badge/UI-Black_Glass-000000?style=for-the-badge&logo=windowsterminal" alt="UI" />
+    <img src="https://img.shields.io/badge/Performance-Main_Thread_Safe-00FF88?style=for-the-badge&logo=fastapi" alt="Performance" />
     <img src="https://img.shields.io/badge/Memory-Async_RAG-FFD700?style=for-the-badge&logo=memory" alt="Memory" />
     <img src="https://img.shields.io/badge/AI-Ollama-FFD700?style=for-the-badge&logo=ollama" alt="AI" />
     <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python" alt="Python" />
@@ -39,9 +40,11 @@
 - **Proactive Intelligence**: KIBO acts independently. He brings up low battery warnings, pauses resource-heavy tasks if CPU runs too hot, and encourages you if you've been working long hours.
 
 ### 🪟 Premium Desktop Experience
-- **Glassmorphic UI**: Includes a modern, acrylic floating chat interface perfectly matched with Windows 11 aesthetics.
-- **Text & Voice Mastery**: Chat via keyboard, or use push-to-talk to speak directly to KIBO via `faster-whisper` and Pyttsx3. Dynamic muting ensures text-based interactions remain silent.
-- **System Tray Management**: Lightweight global taskbar control for repositioning, muting, or adjusting settings without interrupting your workflow.
+- **Black Glass UI**: A minimalist, high-contrast dark theme across all windows (Chat, Settings, Context Menu) for an elite, premium look.
+- **High-Performance Streaming**: Fully asynchronous Chat UI using worker-thread dispatching — no more UI freezes during AI generation.
+- **Text & Voice Mastery**: Chat via keyboard with smooth token-by-token streaming, or use push-to-talk to speak directly to KIBO.
+- **Privacy-First (No-Logging)**: Chat history is no longer persisted on disk by default, ensuring every session is private and fresh.
+- **System Tray Management**: Lightweight global taskbar control for repositioning or adjusting settings without interrupting your workflow.
 
 ---
 

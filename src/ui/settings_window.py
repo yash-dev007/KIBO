@@ -55,11 +55,15 @@ class SettingsWindow(QWidget):
         close_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
-                color: #888;
+                color: #888888;
                 border: none;
                 font-weight: bold;
+                border-radius: 12px;
             }
-            QPushButton:hover { color: white; }
+            QPushButton:hover { 
+                color: #FFFFFF; 
+                background: rgba(200, 70, 70, 150); 
+            }
         """)
         close_btn.clicked.connect(self.hide)
         header_layout.addWidget(close_btn)
@@ -69,35 +73,35 @@ class SettingsWindow(QWidget):
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: none; background: transparent; }
             QTabBar::tab {
-                background: rgba(255, 255, 255, 10);
-                color: #CCC;
+                background: rgba(40, 40, 40, 150);
+                color: #888888;
                 padding: 8px 16px;
                 border-top-left-radius: 4px;
                 border-top-right-radius: 4px;
                 margin-right: 2px;
             }
             QTabBar::tab:selected {
-                background: rgba(255, 255, 255, 20);
-                color: white;
+                background: rgba(60, 60, 60, 150);
+                color: #E0E0E0;
                 font-weight: bold;
             }
-            QWidget { color: white; font-family: 'Outfit'; }
+            QWidget { color: #E0E0E0; font-family: 'Outfit'; }
             QLineEdit, QSpinBox, QComboBox, QPlainTextEdit {
-                background: rgba(0, 0, 0, 100);
-                border: 1px solid rgba(255, 255, 255, 30);
+                background: rgba(20, 20, 20, 160);
+                border: 1px solid rgba(80, 80, 80, 100);
                 border-radius: 4px;
-                color: white;
+                color: #E0E0E0;
                 padding: 4px;
             }
             QCheckBox { spacing: 8px; }
             QCheckBox::indicator {
                 width: 16px; height: 16px;
-                background: rgba(0, 0, 0, 100);
-                border: 1px solid rgba(255, 255, 255, 30);
+                background: rgba(20, 20, 20, 160);
+                border: 1px solid rgba(80, 80, 80, 100);
                 border-radius: 3px;
             }
             QCheckBox::indicator:checked {
-                background: rgba(0, 255, 136, 150);
+                background: rgba(80, 80, 80, 200);
             }
         """)
 
@@ -126,13 +130,13 @@ class SettingsWindow(QWidget):
         save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(0, 255, 136, 60);
-                border: 1px solid rgba(0, 255, 136, 100);
+                background: rgba(60, 60, 60, 150);
+                border: 1px solid rgba(100, 100, 100, 150);
                 border-radius: 6px;
                 color: white;
                 font-weight: bold;
             }
-            QPushButton:hover { background: rgba(0, 255, 136, 100); }
+            QPushButton:hover { background: rgba(80, 80, 80, 200); }
         """)
         save_btn.clicked.connect(self._save_settings)
         footer_layout.addWidget(save_btn)
@@ -171,13 +175,13 @@ class SettingsWindow(QWidget):
         self.btn_clear_memory.setCursor(Qt.PointingHandCursor)
         self.btn_clear_memory.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 100, 100, 40);
-                border: 1px solid rgba(255, 100, 100, 100);
+                background: rgba(150, 40, 40, 100);
+                border: 1px solid rgba(200, 50, 50, 100);
                 border-radius: 4px;
                 color: white;
                 padding: 4px 8px;
             }
-            QPushButton:hover { background: rgba(255, 100, 100, 80); }
+            QPushButton:hover { background: rgba(200, 50, 50, 150); }
         """)
         self.btn_clear_memory.clicked.connect(self._on_clear_memory)
         layout.addRow("", self.btn_clear_memory)
@@ -346,8 +350,8 @@ class SettingsWindow(QWidget):
         path = QPainterPath()
         path.addRoundedRect(0, 0, self.width(), self.height(), 12, 12)
 
-        painter.setBrush(QColor(22, 24, 28, 240)) # dark acrylic
-        painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0))
+        painter.setBrush(QColor(10, 10, 10, 245))  # match chat window black theme
+        painter.setPen(QPen(QColor(60, 60, 60, 100), 1.0))
         painter.drawPath(path)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:

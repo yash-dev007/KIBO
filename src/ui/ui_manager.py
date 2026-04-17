@@ -60,7 +60,7 @@ class SpeechBubble(QWidget):
         self._label.setWordWrap(True)
         self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._label.setFont(QFont("Outfit", 9, QFont.Bold))
-        self._label.setStyleSheet("color: #F8F9FA; background: transparent; padding: 4px 6px;")
+        self._label.setStyleSheet("color: #F5EDD8; background: transparent; padding: 4px 6px;")
         self._label.setMaximumWidth(220)
 
         # Floating drop shadow for modern 3D UI
@@ -116,10 +116,9 @@ class SpeechBubble(QWidget):
         path.lineTo(w / 2 + 10, h - tail)
         path.closeSubpath()
 
-        # Dark Glassmorphism background matching the Kibo premium UI plan
-        painter.setBrush(QColor(25, 28, 32, 230))
-        # Subtle white outline
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.5))
+        # Warm dark chocolate glassmorphism
+        painter.setBrush(QColor(28, 20, 14, 235))
+        painter.setPen(QPen(QColor(240, 220, 180, 35), 1.2))
         painter.drawPath(path)
 
 
@@ -146,18 +145,18 @@ class AboutDialog(QWidget):
         # Header
         header = QLabel(f"About {pet_name}")
         header.setFont(QFont("Outfit", 14, QFont.Bold))
-        header.setStyleSheet("color: #FFFFFF;")
+        header.setStyleSheet("color: #F5EDD8;")
         header.setAlignment(Qt.AlignCenter)
 
         # Version & Details
         details = QLabel(
             "Version 1.1.0\n"
             "An AI-Powered Desktop Companion.\n\n"
-            "<a href='https://github.com/yash-dev007/KIBO' style='color: #A8F0A8; text-decoration: none;'>View on GitHub</a>"
+            "<a href='https://github.com/yash-dev007/KIBO' style='color: #8FBF6A; text-decoration: none;'>View on GitHub</a>"
         )
         details.setOpenExternalLinks(True)
-        details.setFont(QFont("Segoe UI", 10))
-        details.setStyleSheet("color: #CCCCCC;")
+        details.setFont(QFont("Outfit", 10))
+        details.setStyleSheet("color: #C4B49A;")
         details.setAlignment(Qt.AlignCenter)
 
         # Close button
@@ -165,21 +164,21 @@ class AboutDialog(QWidget):
         btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 255, 255, 10);
-                border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: 6px;
-                color: #FFFFFF;
+                background: rgba(240, 220, 180, 10);
+                border: 1px solid rgba(240, 220, 180, 28);
+                border-radius: 8px;
+                color: #D4C8B4;
                 padding: 6px 0;
                 font-family: 'Outfit', 'Segoe UI';
                 font-weight: bold;
             }
             QPushButton:hover {
-                background: rgba(144, 238, 144, 40);
-                border: 1px solid rgba(144, 238, 144, 80);
-                color: #A8F0A8;
+                background: rgba(143, 191, 106, 40);
+                border: 1px solid rgba(143, 191, 106, 80);
+                color: #D4EDB8;
             }
             QPushButton:pressed {
-                background: rgba(144, 238, 144, 20);
+                background: rgba(143, 191, 106, 20);
             }
         """)
         btn.clicked.connect(self.close)
@@ -198,8 +197,8 @@ class AboutDialog(QWidget):
         path = QPainterPath()
         path.addRoundedRect(0, 0, self.width(), self.height(), 12, 12)
 
-        painter.setBrush(QColor(22, 24, 28, 240)) # Dark acrylic
-        painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0))
+        painter.setBrush(QColor(28, 20, 14, 245))
+        painter.setPen(QPen(QColor(240, 220, 180, 28), 1.0))
         painter.drawPath(path)
 
 
@@ -383,10 +382,10 @@ class UIManager(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background: rgba(22, 24, 28, 230);
-                color: #FFFFFF;
-                border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: 8px;
+                background: rgba(10, 10, 10, 245);
+                color: #E0E0E0;
+                border: 1px solid rgba(80, 80, 80, 100);
+                border-radius: 10px;
                 padding: 6px;
                 font-family: 'Outfit', 'Segoe UI', sans-serif;
                 font-weight: 500;
@@ -394,17 +393,18 @@ class UIManager(QWidget):
             }
             QMenu::item {
                 padding: 8px 24px;
-                border-radius: 4px;
+                border-radius: 6px;
                 margin: 2px 0px;
+                color: #CCCCCC;
             }
             QMenu::item:selected {
-                background: rgba(144, 238, 144, 40); /* Skales Gecko Green Hover */
-                border: 1px solid rgba(144, 238, 144, 80);
-                color: #A8F0A8;
+                background: rgba(60, 60, 60, 150);
+                border: 1px solid rgba(100, 100, 100, 150);
+                color: #FFFFFF;
             }
             QMenu::separator {
                 height: 1px;
-                background: rgba(255, 255, 255, 20);
+                background: rgba(80, 80, 80, 100);
                 margin: 4px 8px;
             }
         """)

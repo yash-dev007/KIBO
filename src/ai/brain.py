@@ -43,7 +43,7 @@ class PetState(Enum):
 # Animation folder name for each state
 STATE_ANIMATION: dict[PetState, str] = {
     PetState.IDLE: "idle/stand",
-    PetState.HAPPY: "action/fly",
+    PetState.HAPPY: "idle/stand",  # base is calm idle; actions fire periodically via timer
     PetState.TIRED: "action/tired",
     PetState.WORKING: "action/smartphone",
     PetState.PANICKED: "action/spinning",
@@ -165,7 +165,7 @@ class Brain(QObject):
                     and 8 <= s.current_hour < 20
                 ),
                 target_state=PetState.HAPPY,
-                speech_text="Feeling great!",
+                speech_text=None,  # no announcement — actions express happiness silently
             ),
         ]
 
@@ -221,10 +221,10 @@ class Brain(QObject):
         self._action_timer.stop()
 
     def _on_action_timer_fired(self) -> None:
-        """Timer expired during IDLE — play a random action clip."""
-        if self._current_state != PetState.IDLE:
-            return
-        if self._ai_state is not None:
+        """Timer expired during IDLE/HAPPY — play a random action clip."""
+        # If blocked (AI active or non-idle state), reschedule and wait
+        if self._ai_state is not None or self._current_state not in (PetState.IDLE, PetState.HAPPY):
+            self._start_action_timer()
             return
         if not self._available_actions:
             return

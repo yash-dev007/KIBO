@@ -132,22 +132,36 @@ def main() -> int:
         def _handle_text_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = True
+            ai_thread.cancel_current()  # abort any in-flight stream before starting new one
             tts_thread.manager.set_silent_mode(True)
+            brain.on_thinking_started()  # show THINKING animation during text chat
             proactive_engine.update_last_interaction()
-            ai_thread.client.send_query(text)
+            QMetaObject.invokeMethod(
+                ai_thread.client, "send_query",
+                Qt.QueuedConnection,
+                Q_ARG(str, text),
+            )
 
         def _handle_voice_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = False
             tts_thread.manager.set_silent_mode(False)
             brain.on_thinking_started()
-            ai_thread.client.send_query(text)
+            QMetaObject.invokeMethod(
+                ai_thread.client, "send_query",
+                Qt.QueuedConnection,
+                Q_ARG(str, text),
+            )
 
         def _on_response_done(text: str) -> None:
             if not _is_text_chat:
                 brain.on_talking_started(text)
             chat_window.on_response_done(text)
-            tts_thread.manager.speak(text)
+            QMetaObject.invokeMethod(
+                tts_thread.manager, "speak",
+                Qt.QueuedConnection,
+                Q_ARG(str, text),
+            )
             QTimer.singleShot(0, lambda: memory_store.extract_facts_async(text))
 
         chat_window.message_sent.connect(_handle_text_query)

@@ -187,6 +187,8 @@ class VideoAnimationController(QObject):
         self._player.setVideoOutput(self._sink)
         self._sink.videoFrameChanged.connect(self._on_frame)
         self._player.playbackStateChanged.connect(self._on_state_changed)
+        self._player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self._switching = False  # True while setSource+play is in-flight; gates PNG fallback
 
         # PNG fallback
         self._png = PngAnimationController(size, frame_rate_ms, skin)
@@ -226,6 +228,8 @@ class VideoAnimationController(QObject):
         if webm:
             self._using_png = False
             self._png.stop()
+            self._switching = True  # suppress PNG fallback until PlayingState fires
+            self._player.setLoops(QMediaPlayer.Infinite if loop else 1)
             self._player.setSource(QUrl.fromLocalFile(str(webm)))
             self._player.play()
         else:
@@ -351,17 +355,16 @@ class VideoAnimationController(QObject):
     # ── Playback state ──────────────────────────────────────────────────
 
     def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
+        if state == QMediaPlayer.PlayingState:
+            self._switching = False  # new clip is actually playing — safe to handle errors again
+            return
         if state != QMediaPlayer.StoppedState:
             return
+        if self._switching:
+            return  # stop was caused by setSource during a switch; not an error
 
-        if self._player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
-            if self._loop:
-                self._player.setPosition(0)
-                self._player.play()
-            else:
-                self.animation_finished.emit()
-        else:
-            # Decoder error → fall back to PNG
+        # Unexpected stop (not natural EndOfMedia) → decoder error, fall back to PNG
+        if self._player.mediaStatus() != QMediaPlayer.MediaStatus.EndOfMedia:
             logger.warning(
                 "Video stopped unexpectedly (status=%s), falling back to PNG",
                 self._player.mediaStatus(),
@@ -369,3 +372,8 @@ class VideoAnimationController(QObject):
             self._using_png = True
             self._png.switch_to(self._current_animation, self._loop)
             self._png.start()
+
+    def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        """Emit animation_finished for one-shot clips when the video truly ends."""
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._loop:
+            self.animation_finished.emit()
