@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/yash-dev007/KIBO/main/assets/branding/kibo_logo.png" width="120" style="border-radius: 20px" alt="KIBO Logo" />
+
   <h1>🦎 KIBO v4: The Elite Desktop AI Companion</h1>
   <p><strong>A Hardware-Accelerated, Long-Term Memory, Multi-Integrated Virtual Companion</strong></p>
 
