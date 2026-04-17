@@ -9,23 +9,27 @@ system-monitor-only mode (no hotkey, no voice, no Ollama required).
 
 import logging
 import sys
+import os
 from pathlib import Path
+
+# Force WMF backend to natively support VP9 WebM alpha videos provided by Web Media Extensions
+os.environ["QT_MEDIA_BACKEND"] = "windows"
 
 from PySide6.QtCore import Qt, QLockFile, QMetaObject, Q_ARG, QTimer
 from PySide6.QtWidgets import QApplication
 
-from brain import Brain
-from config_manager import load_config
-from system_monitor import SystemMonitor
-from ui_manager import UIManager
-from tray_manager import TrayManager
-from chat_window import ChatWindow
-from memory_store import MemoryStore
-from notification_router import NotificationRouter
-from proactive_engine import ProactiveEngine
-from settings_window import SettingsWindow
-from task_runner import TaskRunner
-from calendar_manager import CalendarManager
+from src.ai.brain import Brain
+from src.core.config_manager import load_config
+from src.system.system_monitor import SystemMonitor
+from src.ui.ui_manager import UIManager
+from src.ui.tray_manager import TrayManager
+from src.ui.chat_window import ChatWindow
+from src.ai.memory_store import MemoryStore
+from src.system.notification_router import NotificationRouter
+from src.system.proactive_engine import ProactiveEngine
+from src.ui.settings_window import SettingsWindow
+from src.system.task_runner import TaskRunner
+from src.system.calendar_manager import CalendarManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,7 +77,7 @@ def main() -> int:
     brain.brain_output.connect(ui.on_brain_output)
     
     proactive_engine.proactive_notification.connect(notification_router.route)
-    notification_router.notification_approved.connect(lambda msg, _: ui._bubble.show_text(msg))
+    notification_router.notification_approved.connect(lambda msg, _: ui.show_notification(msg))
     
     # Animation finished signal → Brain (handles INTRO→IDLE and ACTING→IDLE)
     ui.animation_finished.connect(brain.on_animation_done)
@@ -90,8 +94,9 @@ def main() -> int:
     settings_window.settings_changed.connect(system_monitor.on_config_changed)
     settings_window.clear_memory_requested.connect(memory_store.clear_all_facts)
     
-    # Reset pet position
-    tray.reset_position.connect(ui._reset_position)
+    # Reset pet position + About from tray
+    tray.reset_position.connect(ui.reset_position)
+    tray.show_about.connect(ui.show_about)
 
     # ── Pet click → Chat ──────────────────────────────────────────────
     ui.pet_clicked.connect(chat_window.toggle)
@@ -105,10 +110,10 @@ def main() -> int:
     task_runner = None
 
     if ai_enabled:
-        from ai_client import AIThread
-        from hotkey_listener import HotkeyThread
-        from tts_manager import TTSThread
-        from voice_listener import VoiceThread
+        from src.ai.ai_client import AIThread
+        from src.system.hotkey_listener import HotkeyThread
+        from src.ai.tts_manager import TTSThread
+        from src.ai.voice_listener import VoiceThread
 
         hotkey_thread = HotkeyThread(config)
         voice_thread = VoiceThread(config)
@@ -116,27 +121,44 @@ def main() -> int:
         tts_thread = TTSThread(config)
         task_runner = TaskRunner(config, ai_client=ai_thread.client)
 
+        # ── Mic button in chat → same flow as hardware hotkey ─────────────
+        chat_window.mic_pressed.connect(brain.on_listening_started)
+        chat_window.mic_pressed.connect(voice_thread._listener.on_hotkey_pressed)
+        chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
+
         # ── Chat input → AI (queued, thread-safe) ─────────────────────────
-        chat_window.message_sent.connect(brain.on_thinking_started)
-        chat_window.message_sent.connect(
-            lambda t: QMetaObject.invokeMethod(
-                ai_thread.client, "send_query",
-                Qt.QueuedConnection, Q_ARG(str, t)
-            )
-        )
-        chat_window.message_sent.connect(proactive_engine.update_last_interaction)
+        _is_text_chat = False
+
+        def _handle_text_query(text: str) -> None:
+            nonlocal _is_text_chat
+            _is_text_chat = True
+            tts_thread.manager.set_silent_mode(True)
+            proactive_engine.update_last_interaction()
+            ai_thread.client.send_query(text)
+
+        def _handle_voice_query(text: str) -> None:
+            nonlocal _is_text_chat
+            _is_text_chat = False
+            tts_thread.manager.set_silent_mode(False)
+            brain.on_thinking_started()
+            ai_thread.client.send_query(text)
+
+        def _on_response_done(text: str) -> None:
+            if not _is_text_chat:
+                brain.on_talking_started(text)
+            chat_window.on_response_done(text)
+            tts_thread.manager.speak(text)
+            QTimer.singleShot(0, lambda: memory_store.extract_facts_async(text))
+
+        chat_window.message_sent.connect(_handle_text_query)
 
         # Hotkey -> Brain (listening) + VoiceThread (record)
         hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
-        hotkey_thread.hotkey_pressed.connect(
-            lambda: voice_thread._listener.on_hotkey_pressed()
-        )
+        hotkey_thread.hotkey_pressed.connect(voice_thread._listener.on_hotkey_pressed)
+        hotkey_thread.hotkey_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
 
         # Voice transcript -> Brain (thinking) + AI (query)
-        voice_thread.transcript_ready.connect(brain.on_thinking_started)
-        voice_thread.transcript_ready.connect(
-            lambda text: ai_thread.client.send_query(text)
-        )
+        voice_thread.transcript_ready.connect(_handle_voice_query)
         voice_thread.error_occurred.connect(ui.on_ai_error)
         voice_thread.error_occurred.connect(lambda _: brain.on_ai_done())
 
@@ -144,12 +166,7 @@ def main() -> int:
         ai_thread.response_chunk.connect(ui.on_response_chunk)
         ai_thread.response_chunk.connect(chat_window.on_chunk)
         
-        ai_thread.response_done.connect(brain.on_talking_started)
-        ai_thread.response_done.connect(chat_window.on_response_done)
-        ai_thread.response_done.connect(tts_thread.speak)
-        ai_thread.response_done.connect(
-            lambda t: QTimer.singleShot(0, lambda: memory_store.extract_facts_async(t))
-        )
+        ai_thread.response_done.connect(_on_response_done)
         
         ai_thread.error_occurred.connect(ui.on_ai_error)
         ai_thread.error_occurred.connect(chat_window.on_error)

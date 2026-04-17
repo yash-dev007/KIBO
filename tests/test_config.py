@@ -11,7 +11,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config_manager import load_config, DEFAULT_CONFIG
+from src.core.config_manager import load_config, DEFAULT_CONFIG
 
 
 @pytest.fixture

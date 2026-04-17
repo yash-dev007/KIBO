@@ -1,0 +1,19 @@
+# main.py
+
+## Dependencies
+- [[ai_client]]
+- [[brain]]
+- [[calendar_manager]]
+- [[chat_window]]
+- [[config_manager]]
+- [[hotkey_listener]]
+- [[memory_store]]
+- [[notification_router]]
+- [[proactive_engine]]
+- [[settings_window]]
+- [[system_monitor]]
+- [[task_runner]]
+- [[tray_manager]]
+- [[tts_manager]]
+- [[ui_manager]]
+- [[voice_listener]]

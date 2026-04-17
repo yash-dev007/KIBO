@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
-from notification_router import NotificationRouter
-from config_manager import DEFAULT_CONFIG
+from src.system.notification_router import NotificationRouter
+from src.core.config_manager import DEFAULT_CONFIG
 
 def test_notification_router(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)

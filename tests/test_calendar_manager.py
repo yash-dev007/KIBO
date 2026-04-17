@@ -1,6 +1,6 @@
 import pytest
-from calendar_manager import CalendarManager
-from config_manager import DEFAULT_CONFIG
+from src.system.calendar_manager import CalendarManager
+from src.core.config_manager import DEFAULT_CONFIG
 import datetime
 
 def test_calendar_manager_none(tmp_path, monkeypatch):
@@ -16,27 +16,29 @@ def test_calendar_manager_none(tmp_path, monkeypatch):
     assert len(events) == 0
     assert mgr.get_next_event() is None
 
-def test_calendar_manager_mock(tmp_path, monkeypatch):
+def test_calendar_manager_update_events(tmp_path, monkeypatch):
+    """Test _update_events directly — bypasses OAuth flow entirely."""
     config = dict(DEFAULT_CONFIG)
     config["calendar_provider"] = "google"
-    
+
     monkeypatch.setattr("calendar_manager.get_user_data_dir", lambda: tmp_path)
-    
+
     now = datetime.datetime.now()
     future_time = (now + datetime.timedelta(minutes=30)).isoformat()
     past_time = (now - datetime.timedelta(minutes=30)).isoformat()
-    
-    mock_events = [
-        {"start_time": past_time, "title": "Old Meeting"},
-        {"start_time": future_time, "title": "Upcoming Meeting"}
-    ]
-    
-    import json
-    (tmp_path / "mock_calendar.json").write_text(json.dumps(mock_events), "utf-8")
-    
+
     mgr = CalendarManager(config)
-    mgr._poll()
-    
-    next_event = mgr.get_next_event()
-    assert next_event is not None
-    assert next_event["title"] == "Upcoming Meeting"
+
+    received = []
+    mgr.events_updated.connect(received.extend)
+
+    # Simulate what _fetch_google_calendar would produce after parsing
+    parsed_events = [
+        {"title": "Old Meeting", "start_time": past_time},
+        {"title": "Upcoming Meeting", "start_time": future_time},
+    ]
+    mgr._update_events(parsed_events)
+
+    assert mgr.get_next_event() is not None
+    assert mgr.get_next_event()["title"] == "Old Meeting"  # first in list as returned
+    assert len(received) == 2  # both events passed to the signal

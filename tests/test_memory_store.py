@@ -1,7 +1,7 @@
 import pytest
 import datetime
 from pathlib import Path
-from memory_store import MemoryStore
+from src.ai.memory_store import MemoryStore
 
 def test_retrieve_relevant(tmp_path, monkeypatch):
     # Mock config

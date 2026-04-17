@@ -1,8 +1,8 @@
 import pytest
 import json
 from unittest.mock import MagicMock
-from task_runner import TaskRunner
-from config_manager import DEFAULT_CONFIG
+from src.system.task_runner import TaskRunner
+from src.core.config_manager import DEFAULT_CONFIG
 
 def test_task_runner_add_cancel(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)

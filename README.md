@@ -1,77 +1,105 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/yash-dev007/KIBO/main/assets/branding/kibo_logo.png" width="120" style="border-radius: 20px" />
+  <img src="https://raw.githubusercontent.com/yash-dev007/KIBO/main/assets/branding/kibo_logo.png" width="120" style="border-radius: 20px" alt="KIBO Logo" />
   <h1>🦎 KIBO v4: The Elite Desktop AI Companion</h1>
   <p><strong>A Hardware-Accelerated, Long-Term Memory, Multi-Integrated Virtual Companion</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/Engine-WebM_Video-00FF88?style=for-the-badge&logo=probot" />
-    <img src="https://img.shields.io/badge/UI-Glassmorphism-16181C?style=for-the-badge&logo=windowsterminal" />
-    <img src="https://img.shields.io/badge/Memory-Async_RAG-FFD700?style=for-the-badge&logo=memory" />
-    <img src="https://img.shields.io/badge/AI-Ollama-FFD700?style=for-the-badge&logo=ollama" />
-    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python" />
+    <a href="https://github.com/yash-dev007/KIBO/stargazers"><img src="https://img.shields.io/github/stars/yash-dev007/KIBO?style=for-the-badge&color=00FF88" alt="Stars" /></a>
+    <a href="https://github.com/yash-dev007/KIBO/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License" /></a>
+    <img src="https://img.shields.io/badge/Engine-WebM_Video-00FF88?style=for-the-badge&logo=youtube" alt="Engine" />
+    <img src="https://img.shields.io/badge/UI-Glassmorphism-16181C?style=for-the-badge&logo=windowsterminal" alt="UI" />
+    <img src="https://img.shields.io/badge/Memory-Async_RAG-FFD700?style=for-the-badge&logo=memory" alt="Memory" />
+    <img src="https://img.shields.io/badge/AI-Ollama-FFD700?style=for-the-badge&logo=ollama" alt="AI" />
+    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python" alt="Python" />
   </p>
 </div>
 
 ---
 
 ## 🌟 Overview
-**KIBO** is an elite desktop companion that bridges the gap between static virtual pets and autonomous AI agents. Unlike traditional apps, KIBO lives as a frameless, glass-textured mascot that reacts to your CPU load, active windows, calendar meetings, and background tasks while maintaining a persistent memory of your preferences.
+**KIBO** is an elite desktop companion that bridges the gap between static virtual pets and autonomous AI agents. Unlike traditional apps, KIBO lives directly on your desktop as a frameless, glass-textured mascot. KIBO reacts in real-time to your CPU load, active windows, calendar meetings, and background tasks, all while maintaining a persistent memory of your preferences using a secure local AI backend.
 
 ---
 
-## ✨ v4 Milestone Features
+## ✨ Features (v4 Milestone)
 
 ### 🎞️ Next-Gen Animation Engine
-- **WebM Integration**: Switched from legacy PNG sequences to high-fidelity WebM video assets for ultra-smooth movement.
-- **Dynamic Chroma Keying**: Real-time Numpy-accelerated background removal for perfectly transparent "floating" animations.
-- **Action Shuffling**: KIBO feels alive with an intelligent state machine that triggers random animations (working out, bubbles, sleeping) during idle time.
+- **WebM Integration**: Enjoy ultra-smooth movement using high-fidelity WebM video assets instead of legacy PNG sequences.
+- **Dynamic Chroma Keying**: Employs real-time, software-accelerated background removal for perfectly transparent, "floating" animations.
+- **Action Shuffling**: KIBO feels alive! An intelligent state machine triggers random, seamless animations (working out, playing, sleeping) during user idle time.
 
 ### 🧠 Smart Memory & RAG
-- **Async Fact Extraction**: KIBO automatically analyzes your conversations in the background to extract factual memories (preferences, names, tasks).
-- **Persistent retrieval**: Uses a keyword and recency-based scoring system to inject relevant context into the AI's "brain" before every response.
-- **Privacy Control**: Settings > AI > Clear Memory allows you to wipe all learned facts instantly.
+- **Async Fact Extraction**: KIBO automatically processes your conversations in the background to glean factual memories (preferences, names, tasks).
+- **Persistent Retrieval**: Driven by a keyword and recency-based scoring algorithm, KIBO injects hyper-relevant context into his "brain" before constructing a response.
+- **Total Privacy**: Built completely locally! The `Clear Memory` setting instantly truncates and wipes all learned facts.
 
 ### 🗓️ Ecosystem Integrations
-- **Google Calendar Sync**: Asynchronous polling of Google Calendar events with proactive meeting reminders.
-- **Autonomous Task Runner**: A background worker that can execute long-running AI tasks with built-in rate limiting and user approval flow.
-- **Proactive Intelligence**: KIBO won't just wait for you—he checks in if you've been idle, alerts you to low battery, or panics if your CPU is overloaded.
+- **Google Calendar Sync**: Asynchronous polling surfaces upcoming Google Calendar events directly into KIBO’s proactive reminders.
+- **Autonomous Task Runner**: Executes complex, long-running AI instructions with built-in rate-limiting and user verification.
+- **Proactive Intelligence**: KIBO acts independently. He brings up low battery warnings, pauses resource-heavy tasks if CPU runs too hot, and encourages you if you've been working long hours.
 
-### 🪟 Premium Experience
-- **Glassmorphic Chat Window**: A modern, acrylic chat interface with session history persistence.
-- **Unified Settings UI**: Multi-tab configuration window for managing AI models, proactive rules, and appearance.
-- **System Tray Management**: Full control from the Windows taskbar with a single-instance lock to prevent duplicate processes.
-
----
-
-## 🛠️ Tech Stack
-- 🐍 **Python 3.11+**
-- 🎨 **PySide6** (Qt for Python) with Glassmorphism
-- 🔢 **Numpy** (Accelerated image processing)
-- 🎙️ **faster-whisper** & **sounddevice** (Voice intelligence)
-- ☁️ **Ollama** (Local LLM backend)
-- 📅 **Google API Client** (Calendar integration)
+### 🪟 Premium Desktop Experience
+- **Glassmorphic UI**: Includes a modern, acrylic floating chat interface perfectly matched with Windows 11 aesthetics.
+- **Text & Voice Mastery**: Chat via keyboard, or use push-to-talk to speak directly to KIBO via `faster-whisper` and Pyttsx3. Dynamic muting ensures text-based interactions remain silent.
+- **System Tray Management**: Lightweight global taskbar control for repositioning, muting, or adjusting settings without interrupting your workflow.
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Architecture & Tech Stack
+KIBO guarantees complete privacy, smooth performance, and hardware-accelerated graphics support:
+- 🐍 **Language**: Python 3.11+
+- 🎨 **GUI Framework**: PySide6 (Qt for Python) with pure C++ window layering
+- 🔢 **Video Processing**: Numpy + Python Threading
+- 🎙️ **Voice AI**: `faster-whisper` & `sounddevice`
+- ☁️ **LLM Backend**: Ollama (Llama 3.2 3B is the designated optimal model) 
+- 📅 **Productivity**: Google API Client
 
-### 📦 Standalone Windows EXE
-1. Download the latest `KIBO` folder from Releases.
-2. Double-click **`KIBO.exe`**.
-3. *Note: Ensure Ollama is running for AI features.*
+---
 
-### 🐍 Developer Setup
+## 🚀 Getting Started
+
+### 📋 Prerequisites
+1. **Python 3.11+** installed locally.
+2. Ensure [Ollama](https://ollama.com/) is installed and running in your background. KIBO defaults to using Llama 3 models locally. Preload your preferred model via CLI:
+   ```bash
+   ollama run llama3.2:3b
+   ```
+
+### 💻 Developer Setup
 ```bash
-# Clone
+# Clone the repository
 git clone https://github.com/yash-dev007/KIBO.git
 cd KIBO
+
+# Create and activate a Conda Environment
+conda create -n kibo python=3.11 -y
+conda activate kibo
 
 # Install requirements
 pip install -r requirements.txt
 
-# Launch
+# Launch KIBO
 python main.py
 ```
+
+---
+
+## ⌨️ Global Shortcuts & Interaction
+| Action | Keybinding / Trigger |
+| :--- | :--- |
+| **Voice Hotkey** | `Ctrl + K` (Hold) |
+| **Summon Chat** | Left Click on KIBO |
+| **Tray Menu** | Right Click on KIBO |
+
+---
+
+## 🤝 Contributing
+Contributions, issues, and feature requests are highly welcome! Please check the [CONTRIBUTING.md](CONTRIBUTING.md) for details on how you can help out.
+
+---
+
+## 📝 License
+Distributed under the **MIT License**. See `LICENSE` for more information.
 
 ---
 
