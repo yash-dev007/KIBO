@@ -22,7 +22,7 @@ from typing import Optional
 
 import numpy as np
 import sounddevice as sd
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QMetaObject, QObject, QThread, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,7 @@ class VoiceListener(QObject):
                 self.transcript_ready.emit(text)
             else:
                 logger.debug("Empty transcription, ignoring.")
+                self.error_occurred.emit("No speech detected.")
         except Exception as exc:
             logger.error("Transcription error: %s", exc)
             self.error_occurred.emit(f"Transcription failed: {exc}")
@@ -163,8 +164,10 @@ class VoiceThread(QThread):
         self.exec()  # Qt event loop so slots on this thread work
 
     def on_hotkey_pressed(self) -> None:
-        # Call via queued connection from main thread
-        self._listener.on_hotkey_pressed()
+        QMetaObject.invokeMethod(
+            self._listener, "on_hotkey_pressed",
+            Qt.QueuedConnection,
+        )
 
     def stop(self) -> None:
         self.quit()

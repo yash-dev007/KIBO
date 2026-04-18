@@ -123,7 +123,7 @@ def main() -> int:
 
         # ── Mic button in chat → same flow as hardware hotkey ─────────────
         chat_window.mic_pressed.connect(brain.on_listening_started)
-        chat_window.mic_pressed.connect(voice_thread._listener.on_hotkey_pressed)
+        chat_window.mic_pressed.connect(voice_thread.on_hotkey_pressed)
         chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
 
         # ── Chat input → AI (queued, thread-safe) ─────────────────────────
@@ -168,8 +168,13 @@ def main() -> int:
 
         # Hotkey -> Brain (listening) + VoiceThread (record)
         hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
-        hotkey_thread.hotkey_pressed.connect(voice_thread._listener.on_hotkey_pressed)
+        hotkey_thread.hotkey_pressed.connect(voice_thread.on_hotkey_pressed)
         hotkey_thread.hotkey_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
+
+        # Voice thread states -> UI
+        voice_thread.recording_started.connect(chat_window.show_listening_indicator)
+        voice_thread.transcript_ready.connect(chat_window.update_voice_transcript)
+        voice_thread.error_occurred.connect(chat_window.cancel_listening)
 
         # Voice transcript -> Brain (thinking) + AI (query)
         voice_thread.transcript_ready.connect(_handle_voice_query)

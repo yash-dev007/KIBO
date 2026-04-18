@@ -201,6 +201,8 @@ class Brain(QObject):
 
     def _pick_action(self) -> str:
         """Pick a random action using shuffled-bag (no repeats until all seen)."""
+        if not self._available_actions:
+            return "placeholder"
         if not self._action_bag:
             self._action_bag = list(self._available_actions)
             random.shuffle(self._action_bag)
@@ -378,10 +380,16 @@ class Brain(QObject):
     def _set_ai_state(self, state: PetState, speech: Optional[str]) -> None:
         self._ai_state = state
         self._current_state = state
+        
+        if state in (PetState.THINKING, PetState.TALKING):
+            anim_name = f"action/{self._pick_action()}"
+        else:
+            anim_name = STATE_ANIMATION[state]
+            
         output = BrainOutput(
             state=state,
             speech_text=speech,
-            animation_name=STATE_ANIMATION[state],
+            animation_name=anim_name,
         )
         self.brain_output.emit(output)
 

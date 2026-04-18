@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QMetaObject, QObject, QThread, Qt, Signal, Slot, Q_ARG
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,11 @@ class TTSThread(QThread):
         self.exec()
 
     def speak(self, text: str) -> None:
-        self._manager.speak(text)
+        QMetaObject.invokeMethod(
+            self._manager, "speak",
+            Qt.QueuedConnection,
+            Q_ARG(str, text),
+        )
 
     def stop(self) -> None:
         self.quit()

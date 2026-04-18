@@ -198,6 +198,7 @@ class ChatWindow(QWidget):
         self._drag_pos: Optional[QPoint] = None
 
         self._current_ai_bubble: Optional[MessageBubble] = None
+        self._current_user_bubble: Optional[MessageBubble] = None
         self._mic_cooldown = False
         self._auto_scroll = True
 
@@ -555,7 +556,49 @@ class ChatWindow(QWidget):
         self._current_ai_bubble = MessageBubble("assistant", "", self._get_timestamp(), self)
         self.scroll_layout.addWidget(self._make_row(self._current_ai_bubble, "assistant"))
 
+    # ------------------------------------------------------------------
+    # Voice visual feedback slots
+    # ------------------------------------------------------------------
+    
+    @Slot()
+    def show_listening_indicator(self) -> None:
+        self._auto_scroll = True
+        
+        # Stop any existing AI bubble
+        if self._current_ai_bubble is not None:
+            if not self._current_ai_bubble.content:
+                self._current_ai_bubble.label.setText("…")
+            if hasattr(self._current_ai_bubble, "_timer"):
+                self._current_ai_bubble._timer.stop()
+            self._current_ai_bubble = None
+            
+        self._current_user_bubble = MessageBubble("user", "[Listening...]", self._get_timestamp(), self)
+        self.scroll_layout.addWidget(self._make_row(self._current_user_bubble, "user"))
+        self._scroll_to_bottom()
 
+    @Slot(str)
+    def update_voice_transcript(self, text: str) -> None:
+        if self._current_user_bubble is not None:
+            self._current_user_bubble.content = text
+            self._current_user_bubble.label.setText(text)
+            self._current_user_bubble.label.updateGeometry()
+            self._current_user_bubble.updateGeometry()
+            self._current_user_bubble = None
+        else:
+            user_bubble = MessageBubble("user", text, self._get_timestamp(), self)
+            self.scroll_layout.addWidget(self._make_row(user_bubble, "user"))
+
+        # AI loading bubble now that text is transcribed
+        self._current_ai_bubble = MessageBubble("assistant", "", self._get_timestamp(), self)
+        self.scroll_layout.addWidget(self._make_row(self._current_ai_bubble, "assistant"))
+        self._scroll_to_bottom()
+
+    @Slot(str)
+    def cancel_listening(self, error_msg: str) -> None:
+        if self._current_user_bubble is not None:
+            self._current_user_bubble.content = f"[{error_msg}]"
+            self._current_user_bubble.label.setText(self._current_user_bubble.content)
+            self._current_user_bubble = None
 
     # ------------------------------------------------------------------
     # AI streaming slots
@@ -591,6 +634,7 @@ class ChatWindow(QWidget):
             if w is not None:
                 w.deleteLater()
         self._current_ai_bubble = None
+        self._current_user_bubble = None
 
     # ------------------------------------------------------------------
     # Window events
