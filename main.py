@@ -10,6 +10,7 @@ system-monitor-only mode (no hotkey, no voice, no Ollama required).
 import logging
 import sys
 import os
+import re
 from pathlib import Path
 
 # Force WMF backend to natively support VP9 WebM alpha videos provided by Web Media Extensions
@@ -36,6 +37,16 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_assistant_text(text: str) -> str:
+    """Remove lightweight roleplay/stage-direction fragments from model output."""
+    cleaned = re.sub(r"\(\s*\*.*?\*\s*\)", " ", text, flags=re.DOTALL)
+    cleaned = re.sub(r"\*[^*\n]{1,120}\*", " ", cleaned)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n\s*\n\s*\n+", "\n\n", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned or text.strip()
 
 
 def main() -> int:
@@ -87,11 +98,14 @@ def main() -> int:
     tray.hide_chat.connect(chat_window.hide)
     tray.quit_requested.connect(app.quit)
     ui.quit_requested.connect(app.quit)
+    chat_window.visibility_changed.connect(tray.set_chat_visible)
     
     # Settings window
     ui.show_settings.connect(settings_window.show)
     settings_window.settings_changed.connect(ui.on_config_changed)
     settings_window.settings_changed.connect(system_monitor.on_config_changed)
+    settings_window.settings_changed.connect(notification_router.on_config_changed)
+    settings_window.settings_changed.connect(proactive_engine.on_config_changed)
     settings_window.clear_memory_requested.connect(memory_store.clear_all_facts)
     
     # Reset pet position + About from tray
@@ -154,15 +168,17 @@ def main() -> int:
             )
 
         def _on_response_done(text: str) -> None:
+            clean_text = _sanitize_assistant_text(text)
             if not _is_text_chat:
-                brain.on_talking_started(text)
-            chat_window.on_response_done(text)
+                brain.on_talking_started(clean_text)
+            chat_window.on_response_done(clean_text)
+            ui.on_response_done(clean_text)
             QMetaObject.invokeMethod(
                 tts_thread.manager, "speak",
                 Qt.QueuedConnection,
-                Q_ARG(str, text),
+                Q_ARG(str, clean_text),
             )
-            QTimer.singleShot(0, lambda: memory_store.extract_facts_async(text))
+            QTimer.singleShot(0, lambda: memory_store.extract_facts_async(clean_text))
 
         chat_window.message_sent.connect(_handle_text_query)
 

@@ -6,7 +6,7 @@ from src.core.config_manager import DEFAULT_CONFIG
 
 def test_task_runner_add_cancel(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)
-    monkeypatch.setattr("task_runner.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.system.task_runner.get_user_data_dir", lambda: tmp_path)
     
     mock_ai_client = MagicMock()
     runner = TaskRunner(config, mock_ai_client)
@@ -24,10 +24,21 @@ def test_task_runner_add_cancel(tmp_path, monkeypatch):
 
 def test_task_runner_approval_blocked(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)
-    monkeypatch.setattr("task_runner.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.system.task_runner.get_user_data_dir", lambda: tmp_path)
     
     mock_ai_client = MagicMock()
     runner = TaskRunner(config, mock_ai_client)
+
+    class DummyThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr("src.system.task_runner.threading.Thread", DummyThread)
     
     t_id = runner.add_task("Approve me", "Desc", requires_approval=True)
     
@@ -44,4 +55,4 @@ def test_task_runner_approval_blocked(tmp_path, monkeypatch):
     
     runner.approve_task(t_id)
     tasks = runner.get_tasks()
-    assert tasks[0]["state"] == "in_progress" or tasks[0]["state"] == "pending" # Because process_queue runs immediately after approve, but we mock httpx
+    assert tasks[0]["state"] == "in_progress"

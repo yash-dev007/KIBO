@@ -21,7 +21,7 @@ def test_calendar_manager_update_events(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)
     config["calendar_provider"] = "google"
 
-    monkeypatch.setattr("calendar_manager.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.system.calendar_manager.get_user_data_dir", lambda: tmp_path)
 
     now = datetime.datetime.now()
     future_time = (now + datetime.timedelta(minutes=30)).isoformat()

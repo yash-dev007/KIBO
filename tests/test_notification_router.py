@@ -13,14 +13,14 @@ def test_notification_router(tmp_path, monkeypatch):
         "cpu-panic": True
     }
     
-    monkeypatch.setattr("notification_router.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.system.notification_router.get_user_data_dir", lambda: tmp_path)
     
     # Mock time to be inside non-quiet hours (e.g. 12:00)
     class MockDatetime(datetime):
         @classmethod
         def now(cls):
             return datetime(2026, 4, 11, 12, 0, 0)
-    monkeypatch.setattr("notification_router.datetime.datetime", MockDatetime)
+    monkeypatch.setattr("src.system.notification_router.datetime.datetime", MockDatetime)
     
     router = NotificationRouter(config)
     
@@ -52,13 +52,13 @@ def test_quiet_hours(tmp_path, monkeypatch):
         "meeting-reminder": True
     }
     
-    monkeypatch.setattr("notification_router.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.system.notification_router.get_user_data_dir", lambda: tmp_path)
     
     class MockDatetimeQuiet(datetime):
         @classmethod
         def now(cls):
             return datetime(2026, 4, 11, 23, 0, 0)
-    monkeypatch.setattr("notification_router.datetime.datetime", MockDatetimeQuiet)
+    monkeypatch.setattr("src.system.notification_router.datetime.datetime", MockDatetimeQuiet)
     
     router = NotificationRouter(config)
     

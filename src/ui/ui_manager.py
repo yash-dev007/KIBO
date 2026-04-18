@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 ASSETS_DIR = get_bundle_dir() / "assets" / "animations"
 
 CROSSFADE_MS = 150
+MAX_BUBBLE_TEXT_LENGTH = 90
 
 
 class SpeechBubble(QWidget):
@@ -60,7 +61,7 @@ class SpeechBubble(QWidget):
         self._label.setWordWrap(True)
         self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._label.setFont(QFont("Outfit", 9, QFont.Bold))
-        self._label.setStyleSheet("color: #F5EDD8; background: transparent; padding: 4px 6px;")
+        self._label.setStyleSheet("color: #E0E0E0; background: transparent; padding: 4px 6px;")
         self._label.setMaximumWidth(220)
 
         # Floating drop shadow for modern 3D UI
@@ -75,13 +76,17 @@ class SpeechBubble(QWidget):
         layout.addWidget(self._label)
         self.setLayout(layout)
 
+    @staticmethod
+    def _truncate_text(text: str) -> str:
+        if len(text) <= MAX_BUBBLE_TEXT_LENGTH:
+            return text
+        return text[: MAX_BUBBLE_TEXT_LENGTH - 7].rstrip() + "..."
+
     def show_text(self, text: str) -> None:
         if not text:
             self.hide()
             return
-        # Truncate very long responses for the bubble
-        if len(text) > 200:
-            text = text[:197] + "..."
+        text = self._truncate_text(text)
         self._label.setText(text)
         self._label.adjustSize()
         self.adjustSize()
@@ -90,9 +95,7 @@ class SpeechBubble(QWidget):
 
     def append_text(self, chunk: str) -> None:
         current = self._label.text()
-        combined = current + chunk
-        if len(combined) > 200:
-            combined = combined[:197] + "..."
+        combined = self._truncate_text(current + chunk)
         self._label.setText(combined)
         self._label.adjustSize()
         self.adjustSize()
@@ -116,9 +119,8 @@ class SpeechBubble(QWidget):
         path.lineTo(w / 2 + 10, h - tail)
         path.closeSubpath()
 
-        # Warm dark chocolate glassmorphism
-        painter.setBrush(QColor(28, 20, 14, 235))
-        painter.setPen(QPen(QColor(240, 220, 180, 35), 1.2))
+        painter.setBrush(QColor(10, 10, 10, 245))
+        painter.setPen(QPen(QColor(60, 60, 60, 100), 1.0))
         painter.drawPath(path)
 
 
@@ -286,12 +288,25 @@ class UIManager(QWidget):
             self._streaming_response = chunk
             self._bubble.show_text(chunk)
             self._position_bubble()
+        elif not self._streaming_response:
+            self._streaming_response = chunk
+            self._bubble.show_text(chunk)
+            self._position_bubble()
         else:
+            self._streaming_response += chunk
             self._bubble.append_text(chunk)
 
     @Slot(str)
     def on_ai_error(self, message: str) -> None:
         self._bubble.show_text(message)
+        self._position_bubble()
+
+    @Slot(str)
+    def on_response_done(self, text: str) -> None:
+        if not self._config.get("enable_speech_bubbles", True):
+            return
+        self._streaming_response = text
+        self._bubble.show_text(text)
         self._position_bubble()
 
     @Slot(dict)
@@ -339,13 +354,17 @@ class UIManager(QWidget):
 
     def _position_bubble(self) -> None:
         pet_pos = self.pos()
-        bubble_x = pet_pos.x() + self.width() // 2 - self._bubble.width() // 2
-        bubble_y = pet_pos.y() - self._bubble.height() - 5
-        # Keep on screen
-        screen = QApplication.primaryScreen().geometry()
-        bubble_x = max(0, min(bubble_x, screen.width() - self._bubble.width()))
-        bubble_y = max(0, bubble_y)
-        self._bubble.move(bubble_x, bubble_y)
+        screen = QApplication.primaryScreen().availableGeometry()
+        bubble_w = self._bubble.width()
+        bubble_h = self._bubble.height()
+        gap = 14
+
+        bubble_x = pet_pos.x() + self.width() // 2 - bubble_w // 2
+        bubble_y = pet_pos.y() - bubble_h - gap
+
+        bubble_x = max(screen.left(), min(bubble_x, screen.right() - bubble_w))
+        bubble_y = max(screen.top(), bubble_y)
+        self._bubble.move(int(bubble_x), int(bubble_y))
 
     def moveEvent(self, event) -> None:
         super().moveEvent(event)

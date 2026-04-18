@@ -186,6 +186,7 @@ class ApprovalWidget(QWidget):
 class ChatWindow(QWidget):
     message_sent = Signal(str)
     closed = Signal()
+    visibility_changed = Signal(bool)
     task_approved = Signal(str)
     task_cancelled = Signal(str)
     mic_pressed = Signal()
@@ -612,8 +613,10 @@ class ChatWindow(QWidget):
     @Slot(str)
     def on_response_done(self, text: str) -> None:
         if self._current_ai_bubble:
-            if not self._current_ai_bubble.content:
-                self._current_ai_bubble.append_chunk(text)
+            self._current_ai_bubble.content = text
+            self._current_ai_bubble.label.setText(text)
+            self._current_ai_bubble.label.updateGeometry()
+            self._current_ai_bubble.updateGeometry()
             self._current_ai_bubble = None
 
     @Slot(str)
@@ -642,9 +645,11 @@ class ChatWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self.visibility_changed.emit(True)
         self.input_field.setFocus()
 
     def hideEvent(self, event) -> None:
         self._clear_messages()
+        self.visibility_changed.emit(False)
         self.closed.emit()
         super().hideEvent(event)

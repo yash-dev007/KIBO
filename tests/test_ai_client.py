@@ -31,7 +31,7 @@ CONFIG = {
 
 @pytest.fixture
 def client(qt_app):
-    from ai_client import AIClient
+    from src.ai.ai_client import AIClient
     return AIClient(CONFIG)
 
 
@@ -78,7 +78,12 @@ class TestSendQuery:
         errors = []
         client.error_occurred.connect(lambda e: errors.append(e))
 
-        with patch.object(client, "check_ollama", return_value=False):
+        mock_http = MagicMock()
+        mock_http.__enter__ = lambda s: mock_http
+        mock_http.__exit__ = MagicMock(return_value=False)
+        mock_http.stream.side_effect = Exception("Connection refused")
+
+        with patch("src.ai.ai_client.httpx.Client", return_value=mock_http):
             client.send_query("Hello KIBO")
 
         assert len(errors) == 1
@@ -106,8 +111,7 @@ class TestSendQuery:
         mock_http.__exit__ = MagicMock(return_value=False)
         mock_http.stream.return_value = mock_resp
 
-        with patch.object(client, "check_ollama", return_value=True), \
-             patch("httpx.Client", return_value=mock_http):
+        with patch("src.ai.ai_client.httpx.Client", return_value=mock_http):
             client.send_query("Hello")
 
         assert len(responses) == 1

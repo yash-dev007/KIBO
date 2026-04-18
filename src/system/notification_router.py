@@ -2,7 +2,7 @@ import json
 import logging
 import datetime
 from pathlib import Path
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 from src.core.config_manager import get_user_data_dir
 
 logger = logging.getLogger(__name__)
@@ -83,3 +83,7 @@ class NotificationRouter(QObject):
     def update_last_interaction(self) -> None:
         self._state["last_user_interaction"] = int(datetime.datetime.now().timestamp())
         self._save_state()
+
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        self._config = new_config

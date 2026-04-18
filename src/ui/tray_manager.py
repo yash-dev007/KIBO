@@ -1,9 +1,13 @@
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtGui import QIcon, QAction
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from pathlib import Path
+import logging
+
+from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from src.core.config_manager import get_bundle_dir
+
+logger = logging.getLogger(__name__)
+
 
 class TrayManager(QObject):
     show_chat = Signal()
@@ -20,19 +24,15 @@ class TrayManager(QObject):
         self._chat_visible = False
 
         self._tray = QSystemTrayIcon(self)
-        icon_path = get_bundle_dir() / "assets" / "icons" / "tray.png"
-        
-        # If the icon doesn't exist, we can fallback to something or just not show an icon
-        # For now, assume it will exist or QIcon handles missing files gracefully
-        self._tray.setIcon(QIcon(str(icon_path)))
-        self._tray.setToolTip("KIBO — AI Desktop Companion")
+        self._tray.setIcon(self._load_icon())
+        self._tray.setToolTip("KIBO â€” AI Desktop Companion")
 
         self._menu = QMenu()
 
         self._toggle_chat_action = QAction("Open Chat", self)
         self._toggle_chat_action.triggered.connect(self._on_toggle_chat)
         self._menu.addAction(self._toggle_chat_action)
-        
+
         self._menu.addSeparator()
 
         self._reset_pos_action = QAction("Reset Pet Position", self)
@@ -54,6 +54,21 @@ class TrayManager(QObject):
 
         self._tray.show()
 
+    def _load_icon(self) -> QIcon:
+        bundle_dir = get_bundle_dir()
+        skin = self._config.get("buddy_skin", "skales")
+        candidates = [
+            bundle_dir / "assets" / "animations" / skin / "icon.png",
+            bundle_dir / "assets" / "animations" / "skales" / "icon.png",
+        ]
+
+        for path in candidates:
+            if path.exists():
+                return QIcon(str(path))
+
+        logger.warning("Tray icon not found; the system tray entry may be hidden.")
+        return QIcon()
+
     def _on_toggle_chat(self) -> None:
         if self._chat_visible:
             self.hide_chat.emit()
@@ -64,6 +79,7 @@ class TrayManager(QObject):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self._on_toggle_chat()
 
+    @Slot(bool)
     def set_chat_visible(self, visible: bool) -> None:
         self._chat_visible = visible
         if visible:

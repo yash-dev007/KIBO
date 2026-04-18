@@ -240,7 +240,9 @@ class MemoryStore(QObject):
 
                 # Build sanitized filename
                 slug = re.sub(r"[^a-z0-9]+", "-", f["content"][:40].lower()).strip("-")
-                filename = f"{now.strftime('%Y-%m-%d')}_{category}_{slug}.md"
+                if not slug:
+                    slug = "memory"
+                filename = f"{now.strftime('%Y-%m-%d')}_{category}_{slug}_{fact_id}.md"
 
                 meta = {
                     "id": fact_id,

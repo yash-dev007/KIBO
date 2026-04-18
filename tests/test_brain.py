@@ -14,6 +14,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from PySide6.QtWidgets import QApplication
+from src.ai import brain as brain_module
+
+sys.modules.setdefault("brain", brain_module)
 
 # QApplication must exist before importing Brain (PySide6 requirement)
 @pytest.fixture(scope="session")
@@ -96,7 +99,8 @@ class TestStateTransitions:
     def test_idle_when_no_triggers(self, brain):
         from brain import PetState
         outputs = collect_outputs(brain, make_sensor(cpu=10.0, hour=10))
-        assert outputs[0].state == PetState.IDLE
+        assert outputs == []
+        assert brain.current_state == PetState.IDLE
 
 
 class TestPriority:
@@ -129,7 +133,8 @@ class TestSpeechOnTransitionOnly:
         # Trigger PANICKED twice in a row — second should have no speech
         collect_outputs(brain, make_sensor(cpu=90.0))  # transition
         outputs = collect_outputs(brain, make_sensor(cpu=91.0))  # same state
-        assert outputs[0].speech_text is None
+        assert outputs == []
+        assert brain.current_state == PetState.PANICKED
 
     def test_animation_name_matches_state(self, brain):
         from brain import PetState, STATE_ANIMATION
