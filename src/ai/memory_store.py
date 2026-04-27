@@ -18,9 +18,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 
 from src.core.config_manager import get_user_data_dir
+from src.ai.memory_providers import get_provider as _get_memory_provider
 
 logger = logging.getLogger(__name__)
 
@@ -95,49 +96,63 @@ class MemoryStore(QObject):
         self._lock = threading.Lock()
         self._cache: Dict[str, dict] = {}
 
+        db_path = get_user_data_dir() / "memories.db"
+        self._provider = _get_memory_provider(config, db_path)
+        self._migration_done = threading.Event()
+
     # ── Public API ──────────────────────────────────────────────────────
 
     def extract_facts_async(self, conversation_text: str) -> None:
-        """Extract memorable facts from conversation text in a background thread."""
+        """Extract memorable facts from conversation text in a background thread.
+
+        Legacy path — kept as a fallback when the LLM provider can't emit
+        inline `remember` tool calls. Skipped automatically if inline
+        extraction is configured.
+        """
         if not self._config.get("memory_enabled", True):
+            return
+        if self._config.get("memory_extraction_inline", True):
             return
         threading.Thread(target=self._extract_worker, args=(conversation_text,), daemon=True).start()
 
-    def retrieve_relevant(self, query: str, max_results: int = 5) -> List[dict]:
-        """Find memories relevant to the query using keyword overlap + recency."""
+    @Slot(dict)
+    def add_fact_inline(self, fact: dict) -> None:
+        """Save a single fact emitted inline by the LLM as a `remember` tool call.
+
+        Expects keys: content (str), category (str), keywords (list[str]).
+        Thread-safe; can be invoked from any thread via QueuedConnection.
+        """
+        if not self._config.get("memory_enabled", True):
+            return
+        if not isinstance(fact, dict) or not fact.get("content"):
+            return
+
+        category = str(fact.get("category", "fact"))
+        keywords = [str(k).lower() for k in fact.get("keywords", []) if k]
+        content = str(fact["content"]).strip()
+
+        now_ts = int(datetime.datetime.now().timestamp())
         with self._lock:
-            facts = self._load_all()
+            self._enforce_cap_locked(extra=1)
+            fact_id = self._write_fact_locked(content=content, category=category, keywords=keywords)
+            self._cache.clear()
 
-        if not facts:
-            return []
+        self._provider.store(
+            fact_id=fact_id,
+            content=content,
+            category=category,
+            keywords=keywords,
+            extracted_at=now_ts,
+        )
+        self._rebuild_dashboard()
+        self.facts_updated.emit()
 
-        tokens = set(query.lower().replace(".", "").replace("?", "").replace(",", "").split())
-        if not tokens:
-            return []
+    def retrieve_relevant(self, query: str, max_results: int = 5) -> List[dict]:
+        """Find memories relevant to the query via the configured provider."""
+        if not self._migration_done.is_set():
+            self._run_migration()
 
-        now = int(datetime.datetime.now().timestamp())
-        scored = []
-
-        for f in facts:
-            keywords = set(f.get("keywords", []))
-            overlap = len(tokens & keywords)
-            score = overlap * 0.7
-
-            extracted_at = f.get("extracted_at", now)
-            days = max(0, (now - extracted_at) / 86400)
-            score += (1.0 / (1.0 + days)) * 0.2
-
-            cat = f.get("category", "")
-            if cat == "person":
-                score += 0.015
-            elif cat == "preference":
-                score += 0.010
-
-            if score > 0:
-                scored.append((score, f))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [item[1] for item in scored[:max_results]]
+        return self._provider.retrieve(query, max_results)
 
     def build_memory_prompt(self, query: str) -> str:
         if not self._config.get("memory_enabled", True):
@@ -217,55 +232,88 @@ class MemoryStore(QObject):
 
             valid = [f for f in facts if isinstance(f, dict) and "content" in f and "keywords" in f]
 
-            # Enforce max facts cap
+            stored: list[tuple[str, str, str, list[str], int]] = []
+            now_ts = int(datetime.datetime.now().timestamp())
             with self._lock:
-                existing = self._load_all()
-                max_facts = self._config.get("memory_max_facts", 200)
-                total = len(existing) + len(valid)
-                if total > max_facts:
-                    to_evict = sorted(existing, key=lambda x: x.get("extracted_at", 0))
-                    for old in to_evict[: total - max_facts]:
-                        old_id = old.get("id", "")
-                        for p in self._memory_dir.glob(f"*{old_id}*.md"):
-                            p.unlink(missing_ok=True)
-                    self._cache.clear()
+                self._enforce_cap_locked(extra=len(valid))
+                for f in valid:
+                    content_s = str(f["content"]).strip()
+                    cat_s = str(f.get("category", "fact"))
+                    kw_s = [str(k).lower() for k in f["keywords"]]
+                    fid = self._write_fact_locked(content=content_s, category=cat_s, keywords=kw_s)
+                    stored.append((fid, content_s, cat_s, kw_s, now_ts))
+                self._cache.clear()
 
-            now = datetime.datetime.now()
-            new_count = 0
+            for fid, content_s, cat_s, kw_s, ts in stored:
+                self._provider.store(
+                    fact_id=fid, content=content_s, category=cat_s,
+                    keywords=kw_s, extracted_at=ts,
+                )
 
-            for f in valid:
-                fact_id = str(uuid.uuid4())[:8]
-                category = f.get("category", "fact")
-                keywords = [str(k).lower() for k in f["keywords"]]
-
-                # Build sanitized filename
-                slug = re.sub(r"[^a-z0-9]+", "-", f["content"][:40].lower()).strip("-")
-                if not slug:
-                    slug = "memory"
-                filename = f"{now.strftime('%Y-%m-%d')}_{category}_{slug}_{fact_id}.md"
-
-                meta = {
-                    "id": fact_id,
-                    "category": category,
-                    "keywords": keywords,
-                    "extracted_at": int(now.timestamp()),
-                    "source_session": now.strftime("%Y-%m-%d"),
-                }
-
-                md_content = f"{_build_frontmatter(meta)}\n\n{f['content']}\n"
-
-                path = self._memory_dir / filename
-                path.write_text(md_content, "utf-8")
-                new_count += 1
-
-            if new_count > 0:
-                with self._lock:
-                    self._cache.clear()
+            if stored:
                 self._rebuild_dashboard()
                 self.facts_updated.emit()
 
         except Exception as e:
             logger.error("Memory extraction failed: %s", e)
+
+    # ── Shared writers (must be called with _lock held) ─────────────────
+
+    def _write_fact_locked(self, *, content: str, category: str, keywords: list[str]) -> str:
+        """Write one fact to disk. Caller must hold _lock. Returns the fact_id."""
+        now = datetime.datetime.now()
+        fact_id = str(uuid.uuid4())[:8]
+        slug = re.sub(r"[^a-z0-9]+", "-", content[:40].lower()).strip("-") or "memory"
+        filename = f"{now.strftime('%Y-%m-%d')}_{category}_{slug}_{fact_id}.md"
+
+        meta = {
+            "id": fact_id,
+            "category": category,
+            "keywords": keywords,
+            "extracted_at": int(now.timestamp()),
+            "source_session": now.strftime("%Y-%m-%d"),
+        }
+        md_content = f"{_build_frontmatter(meta)}\n\n{content}\n"
+        (self._memory_dir / filename).write_text(md_content, "utf-8")
+        return fact_id
+
+    def _enforce_cap_locked(self, *, extra: int) -> None:
+        """Evict oldest facts to keep total <= memory_max_facts. Caller holds _lock."""
+        existing = self._load_all()
+        max_facts = self._config.get("memory_max_facts", 200)
+        overflow = len(existing) + extra - max_facts
+        if overflow <= 0:
+            return
+        to_evict = sorted(existing, key=lambda x: x.get("extracted_at", 0))[:overflow]
+        for old in to_evict:
+            old_id = old.get("id", "")
+            for p in self._memory_dir.glob(f"*{old_id}*.md"):
+                p.unlink(missing_ok=True)
+        self._cache.clear()
+
+    # ── One-time migration ──────────────────────────────────────────────
+
+    def _run_migration(self) -> None:
+        """On first retrieve call, load Markdown memories into the provider.
+
+        Double-checked locking via threading.Event prevents concurrent callers
+        from both running migration. Runs synchronously so the first retrieve
+        sees all persisted facts.
+        """
+        if self._migration_done.is_set():
+            return
+        with self._lock:
+            if self._migration_done.is_set():
+                return
+            facts = self._load_all()
+            if facts:
+                # Normalise id to str — frontmatter parser converts digit-only
+                # values to int, but providers require str keys.
+                for f in facts:
+                    if "id" in f:
+                        f["id"] = str(f["id"])
+                self._provider.migrate(facts)
+            self._migration_done.set()
 
     # ── Dashboard generation ────────────────────────────────────────────
 

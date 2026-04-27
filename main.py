@@ -128,12 +128,14 @@ def main() -> int:
         from src.system.hotkey_listener import HotkeyThread
         from src.ai.tts_manager import TTSThread
         from src.ai.voice_listener import VoiceThread
+        from src.ai.sentence_buffer import SentenceBuffer
 
         hotkey_thread = HotkeyThread(config)
         voice_thread = VoiceThread(config)
         ai_thread = AIThread(config, memory_store=memory_store)
         tts_thread = TTSThread(config)
         task_runner = TaskRunner(config, ai_client=ai_thread.client)
+        sentence_buffer = SentenceBuffer()
 
         # ── Mic button in chat → same flow as hardware hotkey ─────────────
         chat_window.mic_pressed.connect(brain.on_listening_started)
@@ -173,12 +175,11 @@ def main() -> int:
                 brain.on_talking_started(clean_text)
             chat_window.on_response_done(clean_text)
             ui.on_response_done(clean_text)
-            QMetaObject.invokeMethod(
-                tts_thread.manager, "speak",
-                Qt.QueuedConnection,
-                Q_ARG(str, clean_text),
-            )
-            QTimer.singleShot(0, lambda: memory_store.extract_facts_async(clean_text))
+            # Flush any tail sentence to TTS; speech_done emits when drained.
+            sentence_buffer.flush()
+            # Legacy fallback: if inline extraction is OFF, do the old async call.
+            if not config.get("memory_extraction_inline", True):
+                QTimer.singleShot(0, lambda: memory_store.extract_facts_async(clean_text))
 
         chat_window.message_sent.connect(_handle_text_query)
 
@@ -200,9 +201,19 @@ def main() -> int:
         # ── AI → Chat + UI + Memory + TTS ────────────────────────────────────────────
         ai_thread.response_chunk.connect(ui.on_response_chunk)
         ai_thread.response_chunk.connect(chat_window.on_chunk)
-        
+
+        # Streaming: token deltas → sentence buffer → TTS chunk-at-a-time.
+        # Voice replies stream; text-chat replies stay silent (set by silent_mode).
+        ai_thread.response_chunk.connect(sentence_buffer.push)
+        sentence_buffer.sentence_ready.connect(tts_thread.speak_chunk)
+        # When the buffer is flushed (end of reply), signal the TTS drain to finish.
+        sentence_buffer.flushed.connect(tts_thread.end_stream)
+
         ai_thread.response_done.connect(_on_response_done)
-        
+
+        # Inline memory: every `remember` tool-call from the LLM lands here.
+        ai_thread.memory_fact_extracted.connect(memory_store.add_fact_inline)
+
         ai_thread.error_occurred.connect(ui.on_ai_error)
         ai_thread.error_occurred.connect(chat_window.on_error)
         ai_thread.error_occurred.connect(lambda _: brain.on_ai_done())

@@ -98,7 +98,8 @@ class TestStateTransitions:
 
     def test_idle_when_no_triggers(self, brain):
         from brain import PetState
-        outputs = collect_outputs(brain, make_sensor(cpu=10.0, hour=10))
+        # cpu=40 is between 30 (HAPPY threshold) and 50 (WORKING threshold) → no rule fires
+        outputs = collect_outputs(brain, make_sensor(cpu=40.0, hour=10))
         assert outputs == []
         assert brain.current_state == PetState.IDLE
 
@@ -276,7 +277,7 @@ class TestActingState:
 
         assert len(outputs) == 1
         assert outputs[0].state == PetState.ACTING
-        assert outputs[0].animation_name == "actions/stretch"
+        assert outputs[0].animation_name == "action/stretch"
         assert outputs[0].loop is False
 
     def test_action_timer_skipped_during_ai(self, brain):
