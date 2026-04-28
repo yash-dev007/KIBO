@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="assets/branding/kibo-banner.png" alt="KIBO" width="120" />
+<img src="assets/icon.png" alt="KIBO" width="120" />
 
 # KIBO
 
