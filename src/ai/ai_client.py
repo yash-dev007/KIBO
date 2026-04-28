@@ -12,10 +12,12 @@ MemoryStore via the new memory_fact_extracted signal.
 from __future__ import annotations
 
 import logging
+import json
+import re
 import threading
 from typing import Optional
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QThread, Qt, Signal, Slot
 
 from src.ai.llm_providers import ChatChunk, LLMProvider, get_provider
 from src.ai.llm_providers.base import REMEMBER_TOOL_SCHEMA
@@ -117,12 +119,17 @@ class AIClient(QObject):
         if memory_context:
             system += "\n\nWhat you remember:\n" + memory_context
 
-        tools = [REMEMBER_TOOL_SCHEMA] if self._inline_memory else None
+        tools = (
+            [REMEMBER_TOOL_SCHEMA]
+            if self._inline_memory and _should_offer_memory_tool(user_text)
+            else None
+        )
 
         full_response = ""
         json_buffer = ""
         is_json_stream = False
         fact_extracted = False
+        suppressed_tool_json = False
         
         try:
             for chunk in self._provider.stream_chat(
@@ -135,11 +142,15 @@ class AIClient(QObject):
                     return
 
                 if chunk.text_delta:
-                    # Buffer if it's the very first chunk and looks like JSON
-                    if not full_response and not json_buffer and chunk.text_delta.strip().startswith("{"):
+                    # Some local models print function-call JSON as text instead
+                    # of using the tool channel. Buffer that candidate until the
+                    # stream ends so it never leaks into chat bubbles.
+                    if (
+                        not full_response
+                        and not json_buffer
+                        and _looks_like_json_start(chunk.text_delta)
+                    ):
                         is_json_stream = True
-                        self.response_chunk.emit("\n[Extracting memory...]\n")
-                        full_response += "\n[Extracting memory...]\n"
                         
                     if is_json_stream:
                         json_buffer += chunk.text_delta
@@ -156,31 +167,13 @@ class AIClient(QObject):
                 if chunk.done:
                     # Rescue hallucinated tool calls
                     if is_json_stream and json_buffer:
-                        import json
-                        rescued = False
-                        text_to_parse = json_buffer.strip()
-                        
-                        while text_to_parse:
-                            try:
-                                data = json.loads(text_to_parse)
-                                if isinstance(data, dict) and ("parameters" in data or "arguments" in data):
-                                    args = data.get("parameters") or data.get("arguments", {})
-                                    if _valid_memory(args):
-                                        self.memory_fact_extracted.emit(args)
-                                        rescued = True
-                                        fact_extracted = True
-                                        break
-                                break
-                            except Exception:
-                                last_brace = text_to_parse.rfind("}", 0, len(text_to_parse) - 1)
-                                if last_brace == -1:
-                                    break
-                                text_to_parse = text_to_parse[:last_brace + 1]
-                        
-                        if rescued:
-                            # We will handle full_response globally below
-                            pass
-                        elif not rescued:
+                        args, is_tool_json = _extract_memory_args_from_json(json_buffer)
+                        if args is not None and _valid_memory(args):
+                            self.memory_fact_extracted.emit(args)
+                            fact_extracted = True
+                        elif is_tool_json:
+                            suppressed_tool_json = True
+                        else:
                             full_response += json_buffer
                             self.response_chunk.emit(json_buffer)
                     break
@@ -192,9 +185,13 @@ class AIClient(QObject):
             return
 
         if fact_extracted:
-            ack = "\nGot it! I've saved that to my memory."
+            ack = "Got it! I've saved that to my memory."
             full_response += ack
             self.response_chunk.emit(ack)
+
+        if not full_response and suppressed_tool_json:
+            full_response = "Hi! How can I help?"
+            self.response_chunk.emit(full_response)
 
         if full_response:
             self._history.append({"role": "assistant", "content": full_response})
@@ -229,10 +226,88 @@ def _valid_memory(args: dict) -> bool:
     if not isinstance(args.get("category"), str):
         args["category"] = "fact"
 
+    content_raw = args.get("content", "")
+    content = content_raw.strip() if isinstance(content_raw, str) else ""
+    if _is_low_value_memory(content):
+        return False
+
     return (
         isinstance(args.get("content"), str)
-        and len(args["content"].strip()) > 0
+        and len(content) > 0
     )
+
+
+_MEMORY_CUE_PATTERN = re.compile(
+    r"\b("
+    r"remember|don't forget|do not forget|my name is|i am|i'm|i live|"
+    r"i work|i study|i like|i love|i hate|i prefer|my favorite|"
+    r"my favourite|call me|note that"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _should_offer_memory_tool(user_text: str) -> bool:
+    """Only expose memory tools when the user likely shared durable context."""
+    return bool(_MEMORY_CUE_PATTERN.search(user_text))
+
+
+def _looks_like_json_start(text: str) -> bool:
+    stripped = text.lstrip()
+    return stripped.startswith("{") or stripped.startswith("[")
+
+
+def _extract_memory_args_from_json(text: str) -> tuple[Optional[dict], bool]:
+    """Return memory args and whether the text was intended as tool-call JSON."""
+    text_to_parse = text.strip()
+    while text_to_parse:
+        try:
+            data = json.loads(text_to_parse)
+            return _extract_memory_args(data)
+        except json.JSONDecodeError:
+            last_brace = text_to_parse.rfind("}", 0, len(text_to_parse) - 1)
+            last_bracket = text_to_parse.rfind("]", 0, len(text_to_parse) - 1)
+            last_end = max(last_brace, last_bracket)
+            if last_end == -1:
+                return None, False
+            text_to_parse = text_to_parse[: last_end + 1]
+    return None, False
+
+
+def _extract_memory_args(data: object) -> tuple[Optional[dict], bool]:
+    if isinstance(data, list):
+        for item in data:
+            args, is_tool_json = _extract_memory_args(item)
+            if args is not None or is_tool_json:
+                return args, is_tool_json
+        return None, False
+
+    if not isinstance(data, dict):
+        return None, False
+
+    name = str(data.get("name") or data.get("tool") or data.get("function") or "").lower()
+    is_remember = name == "remember"
+    if "parameters" in data or "arguments" in data:
+        args = data.get("parameters") or data.get("arguments") or {}
+        return (args if isinstance(args, dict) else None), True
+    if is_remember:
+        return data, True
+    return None, False
+
+
+def _is_low_value_memory(content: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s]", "", content.lower()).strip()
+    return normalized in {
+        "hi",
+        "hello",
+        "hey",
+        "greeting",
+        "user greeted",
+        "user says hi",
+        "user said hi",
+        "user says hello",
+        "user said hello",
+    }
 
 
 class AIThread(QThread):
@@ -261,16 +336,21 @@ class AIThread(QThread):
         self.exec()
 
     def send_query(self, text: str) -> None:
-        self._client.send_query(text)
+        QMetaObject.invokeMethod(
+            self._client, "send_query", Qt.QueuedConnection, Q_ARG(str, text)
+        )
 
     def cancel_current(self) -> None:
         self._client.cancel_current()
 
     @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:
-        self._client.on_config_changed(new_config)
+        QMetaObject.invokeMethod(
+            self._client, "on_config_changed", Qt.QueuedConnection, Q_ARG(dict, new_config)
+        )
 
     def stop(self) -> None:
+        self.cancel_current()
         self.quit()
         self.wait(3000)
 

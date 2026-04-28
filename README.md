@@ -45,17 +45,19 @@
 - **Push-to-talk** (`Ctrl+K`) with faster-whisper `base.en` + optional silero-vad endpointing
 - **Streaming sentence → TTS pipeline** — Piper neural audio starts playing while the LLM is still generating
 - **Groq cloud LLM** (`llama-3.3-70b`, ~6000 tok/s free tier) with automatic Ollama fallback if no API key is set
-- **Inline memory extraction** — the LLM emits `remember` tool calls mid-stream; no second LLM round-trip
+- **Inline memory extraction** — the LLM can emit `remember` tool calls mid-stream; KIBO suppresses malformed tool JSON so memory writes never leak into chat bubbles
 
 ### Long-term Memory
 - **Vector RAG** via sqlite-vec + fastembed (bge-small-en-v1.5, ~30 MB). Semantic kNN — *"what's my favourite drink?"* finds *"user likes espresso"* without keyword overlap.
 - **Obsidian-compatible vault** — every fact is also written to `~/.kibo/vault/memories/*.md`
 - **One-click clear** from the Settings window
+- **Index-safe cleanup** — clearing memory and retention-cap evictions also clear provider indexes
 - Migration: existing vault Markdown files are embedded on first run, no data lost
 
 ### Animation Engine
 - **VP9 alpha WebM** playback via WMF — zero CPU chroma-key on Windows 10/11 with Web Media Extensions
-- **Automatic PNG fallback** if a WebM asset lacks native alpha or the codec pack is missing
+- **Software chroma-key fallback** if a WebM asset lacks native alpha
+- **Multi-skin support** with `skales`, `capy`, and `bubbles` animation folders
 - **State machine** — IDLE, THINKING, TALKING, ACTING, HAPPY with smooth transitions and random action animations during idle time
 
 ### Clip Mode
@@ -65,7 +67,7 @@
 ### System Awareness (opt-in)
 - Reacts to CPU load, idle time, and active window context
 - Google Calendar integration for meeting reminders
-- Proactive notifications (all disabled by default — enable in `config.json`)
+- Proactive notifications are configurable from `config.json`
 
 ---
 
@@ -146,10 +148,11 @@ Edit `config.json` at the project root.
 | `buddy_skin` | `"skales"` | Animation asset folder under `assets/animations/` |
 | `activation_hotkey` | `"ctrl+k"` | Push-to-talk hotkey |
 | `clip_hotkey` | `"ctrl+alt+k"` | Clip save hotkey |
-| `llm_provider` | `"groq"` | `"groq"` or `"ollama"` |
-| `tts_provider` | `"piper"` | `"piper"` or `"pyttsx3"` |
-| `memory_provider` | `"vector"` | `"vector"` or `"lexical"` |
-| `proactive_enabled` | `false` | System-aware proactive notifications |
+| `llm_provider` | `"auto"` | `"auto"`, `"groq"`, or `"ollama"` |
+| `tts_provider` | `"auto"` | `"auto"`, `"piper"`, or `"pyttsx3"` |
+| `memory_provider` | `"auto"` | `"auto"`, `"vector"`, or `"lexical"` |
+| `memory_extraction_inline` | `true` | Use LLM tool calls for memory extraction |
+| `proactive_enabled` | `true` | System-aware proactive notifications |
 | `calendar_provider` | `"none"` | `"google"` to enable Calendar sync |
 | `enable_speech_bubbles` | `true` | Show/hide speech bubble overlay |
 
@@ -174,16 +177,16 @@ All numbers on Ryzen 5 5600 + 16 GB RAM, Windows 11, Groq + Piper + base.en Whis
 ```
 src/
 ├── ai/
-│   ├── llm_providers/       # Groq (default) + Ollama fallback
-│   ├── tts_providers/       # Piper neural (default) + pyttsx3 fallback
-│   ├── memory_providers/    # Vector sqlite-vec (default) + lexical fallback
+│   ├── llm_providers/       # Groq + Ollama provider selection
+│   ├── tts_providers/       # Piper neural + pyttsx3 provider selection
+│   ├── memory_providers/    # Vector sqlite-vec + lexical fallback
 │   ├── ai_client.py         # Streaming LLM + inline memory tool calls
 │   ├── brain.py             # Pet state machine
 │   ├── sentence_buffer.py   # Token stream → sentences → TTS
 │   ├── tts_manager.py       # TTS queue + streaming
 │   └── voice_listener.py    # Whisper STT + silero-vad
 ├── ui/
-│   ├── animation_engine.py  # VP9 alpha WebM player + PNG fallback
+│   ├── animation_engine.py  # VP9 alpha WebM player + chroma-key fallback
 │   ├── clip_recorder.py     # 5-second ring buffer → animated WebP
 │   ├── ui_manager.py        # Transparent frameless window + speech bubble
 │   ├── chat_window.py       # Streaming chat UI
@@ -204,9 +207,9 @@ scripts/
 Every external dependency is behind a two-level abstraction — default provider with graceful fallback:
 
 ```
-LLM:    Groq  ──fallback──▶  Ollama
-TTS:    Piper ──fallback──▶  pyttsx3
-Memory: sqlite-vec ─────────▶  lexical keyword
+LLM:    auto selects Groq, then Ollama
+TTS:    auto selects Piper, then pyttsx3
+Memory: auto selects sqlite-vec, then lexical keyword
 ```
 
 No API key, no voice model, no GPU? Each layer degrades independently. The app always starts.
@@ -232,7 +235,7 @@ This bakes transparency into the files offline. Runtime CPU cost: zero.
 pytest tests/ -q
 ```
 
-77 tests across the AI client, sentence buffer, memory providers, and voice pipeline.
+85 tests across the AI client, sentence buffer, memory providers, animation resolver, config, task runner, and system pipeline.
 
 ---
 

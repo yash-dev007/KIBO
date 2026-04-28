@@ -157,9 +157,70 @@ class TestInlineMemory:
 
     def test_tools_passed_when_inline_memory_on(self, qt_app):
         client, provider = _make_client(qt_app, [ChatChunk(done=True)])
-        client.send_query("hello")
+        client.send_query("remember that I love espresso")
         assert provider.last_tools is not None
         assert provider.last_tools[0]["function"]["name"] == "remember"
+
+    def test_tools_not_passed_for_plain_greeting(self, qt_app):
+        client, provider = _make_client(qt_app, [ChatChunk(text_delta="Hi!"), ChatChunk(done=True)])
+        client.send_query("hi")
+        assert provider.last_tools is None
+
+    def test_hallucinated_memory_json_is_not_streamed_to_chat(self, qt_app):
+        memory_json = (
+            '{"name": "remember", "parameters": {'
+            '"category": "preference", '
+            '"content": "User likes espresso.", '
+            '"keywords": ["espresso"]'
+            "}}"
+        )
+        client, _ = _make_client(
+            qt_app,
+            [
+                ChatChunk(text_delta=memory_json[:20]),
+                ChatChunk(text_delta=memory_json[20:]),
+                ChatChunk(done=True),
+            ],
+        )
+        chunks: list[str] = []
+        full: list[str] = []
+        captured: list[dict] = []
+        client.response_chunk.connect(chunks.append)
+        client.response_done.connect(full.append)
+        client.memory_fact_extracted.connect(captured.append)
+
+        client.send_query("remember that I like espresso")
+
+        assert captured == [{
+            "category": "preference",
+            "content": "User likes espresso.",
+            "keywords": ["espresso"],
+        }]
+        assert all('"name": "remember"' not in chunk for chunk in chunks)
+        assert full == ["Got it! I've saved that to my memory."]
+
+    def test_low_value_hallucinated_memory_json_gets_fallback_reply(self, qt_app):
+        memory_json = (
+            '{"name": "remember", "parameters": {'
+            '"category": "person", "content": "Hello", "keywords": ["greeting"]'
+            "}}"
+        )
+        client, _ = _make_client(
+            qt_app,
+            [ChatChunk(text_delta=memory_json), ChatChunk(done=True)],
+        )
+        chunks: list[str] = []
+        full: list[str] = []
+        captured: list[dict] = []
+        client.response_chunk.connect(chunks.append)
+        client.response_done.connect(full.append)
+        client.memory_fact_extracted.connect(captured.append)
+
+        client.send_query("hi")
+
+        assert captured == []
+        assert chunks == ["Hi! How can I help?"]
+        assert full == ["Hi! How can I help?"]
 
 
 # ── Cancellation ────────────────────────────────────────────────────────

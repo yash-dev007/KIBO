@@ -171,6 +171,8 @@ class MemoryStore(QObject):
                 except Exception as e:
                     logger.error("Failed to delete memory %s: %s", p.name, e)
             self._cache.clear()
+            self._provider.clear()
+            self._migration_done.set()
         self._rebuild_dashboard()
         self.facts_updated.emit()
 
@@ -285,10 +287,15 @@ class MemoryStore(QObject):
         if overflow <= 0:
             return
         to_evict = sorted(existing, key=lambda x: x.get("extracted_at", 0))[:overflow]
+        evicted_ids: list[str] = []
         for old in to_evict:
-            old_id = old.get("id", "")
+            old_id = str(old.get("id", ""))
+            if old_id:
+                evicted_ids.append(old_id)
             for p in self._memory_dir.glob(f"*{old_id}*.md"):
                 p.unlink(missing_ok=True)
+        if evicted_ids:
+            self._provider.delete(evicted_ids)
         self._cache.clear()
 
     # ── One-time migration ──────────────────────────────────────────────

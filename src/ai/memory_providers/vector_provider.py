@@ -1,4 +1,4 @@
-"""Vector memory provider using sqlite-vec + fastembed.
+﻿"""Vector memory provider using sqlite-vec + fastembed.
 
 Stores embeddings in a local SQLite database alongside the memory records.
 Retrieval uses kNN search over 384-dim bge-small-en vectors.
@@ -65,7 +65,7 @@ class VectorProvider:
             self._ready = True
             logger.info("VectorProvider ready (sqlite-vec + fastembed bge-small-en)")
         except ImportError as exc:
-            logger.warning("VectorProvider unavailable (missing deps): %s — falling back to lexical", exc)
+            logger.info("VectorProvider unavailable (missing deps): %s; falling back to lexical", exc)
             self._ready = False
         except Exception as exc:
             logger.error("VectorProvider setup failed: %s", exc, exc_info=True)
@@ -176,3 +176,22 @@ class VectorProvider:
                 )
             self._conn.commit()
         logger.info("VectorProvider: migration complete")
+
+    def delete(self, fact_ids: list[str]) -> None:
+        if not self._ready or self._conn is None or not fact_ids:
+            return
+
+        ids = [(str(fid),) for fid in fact_ids]
+        with self._db_lock:
+            self._conn.executemany("DELETE FROM memories_vec WHERE id = ?", ids)
+            self._conn.executemany("DELETE FROM memories WHERE id = ?", ids)
+            self._conn.commit()
+
+    def clear(self) -> None:
+        if not self._ready or self._conn is None:
+            return
+
+        with self._db_lock:
+            self._conn.execute("DELETE FROM memories_vec")
+            self._conn.execute("DELETE FROM memories")
+            self._conn.commit()

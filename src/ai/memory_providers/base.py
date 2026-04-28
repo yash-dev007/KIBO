@@ -32,3 +32,11 @@ class MemoryProvider(Protocol):
     def migrate(self, facts: list[dict]) -> None:
         """Ingest facts loaded from Markdown files (idempotent — skip existing ids)."""
         ...
+
+    def delete(self, fact_ids: list[str]) -> None:
+        """Remove facts by id from the provider index."""
+        ...
+
+    def clear(self) -> None:
+        """Remove all indexed facts."""
+        ...

@@ -68,6 +68,18 @@ class VideoAnimationController(QObject):
             path = base / category / f"{clip}.webm"
             if path.is_file():
                 return path
+        if name == "idle":
+            for base in (ASSETS_DIR / self._skin, ASSETS_DIR):
+                idle_dir = base / "idle"
+                if idle_dir.is_dir():
+                    fallback = next(iter(sorted(idle_dir.glob("*.webm"))), None)
+                    if fallback is not None:
+                        logger.debug(
+                            "Resolved generic idle animation to '%s' for skin '%s'.",
+                            fallback.name,
+                            self._skin,
+                        )
+                        return fallback
         return None
 
     # ── Playback control ────────────────────────────────────────────────

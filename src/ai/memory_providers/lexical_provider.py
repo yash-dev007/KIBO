@@ -82,3 +82,10 @@ class LexicalProvider:
             fid = f.get("id")
             if fid and fid not in self._facts:
                 self._facts[fid] = f
+
+    def delete(self, fact_ids: list[str]) -> None:
+        for fid in fact_ids:
+            self._facts.pop(str(fid), None)
+
+    def clear(self) -> None:
+        self._facts.clear()

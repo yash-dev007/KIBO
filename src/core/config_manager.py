@@ -50,6 +50,11 @@ DEFAULT_CONFIG: dict = {
     "activation_hotkey": "ctrl+k",
     "ollama_base_url": "http://localhost:11434",
     "ollama_model": "qwen2.5-coder:7b",
+    "ollama_timeout_s": 60.0,
+    "llm_provider": "auto",
+    "groq_api_key_env": "GROQ_API_KEY",
+    "groq_model": "llama-3.3-70b-versatile",
+    "groq_timeout_s": 30.0,
     "system_prompt": (
         "You are KIBO, a helpful virtual pet assistant who lives on the user's desktop. "
         "Be concise, friendly, and slightly playful. Keep responses to 2-3 sentences "
@@ -57,7 +62,10 @@ DEFAULT_CONFIG: dict = {
     ),
     "conversation_history_limit": 10,
     "tts_enabled": True,
+    "tts_provider": "auto",
     "tts_rate": 175,
+    "piper_model": "en_US-amy-medium",
+    "piper_models_dir": "models/piper",
     "poll_interval_ms": 3000,
     "cpu_panic_threshold": 80,
     "battery_tired_threshold": 20,
@@ -70,6 +78,10 @@ DEFAULT_CONFIG: dict = {
     "recording_max_seconds": 8,
     "silence_threshold_seconds": 1.5,
     "whisper_model": "tiny.en",
+    "stt_model": "base.en",
+    "stt_use_vad": True,
+    "stt_vad_threshold": 0.5,
+    "stt_min_silence_ms": 600,
     "opaque_fallback": False,
     "buddy_skin": "skales",
     "idle_action_interval_min_s": 30,
@@ -77,6 +89,9 @@ DEFAULT_CONFIG: dict = {
     "memory_enabled": True,
     "memory_model": "qwen2.5-coder:7b",
     "memory_max_facts": 200,
+    "memory_provider": "auto",
+    "memory_top_k": 5,
+    "memory_extraction_inline": True,
     "proactive_enabled": True,
     "quiet_hours_start": 22,
     "quiet_hours_end": 7,
@@ -92,6 +107,7 @@ DEFAULT_CONFIG: dict = {
     },
     "calendar_provider": "none",
     "calendar_lookahead_minutes": 60,
+    "clip_hotkey": "ctrl+alt+k",
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
@@ -148,17 +164,25 @@ def _validate(cfg: dict) -> None:
     for int_key in ("poll_interval_ms", "frame_rate_ms", "speech_bubble_timeout_ms",
                     "cpu_panic_threshold", "sleepy_hour", "tts_rate",
                     "conversation_history_limit", "battery_tired_threshold",
-                    "quiet_hours_start", "quiet_hours_end"):
+                    "quiet_hours_start", "quiet_hours_end", "stt_min_silence_ms",
+                    "memory_max_facts", "memory_top_k"):
         if not isinstance(cfg.get(int_key), int):
             default_val = DEFAULT_CONFIG[int_key]
             logger.warning("'%s' must be an int. Resetting to %s.", int_key, default_val)
             cfg[int_key] = default_val
 
-    for float_key in ("silence_threshold_seconds", "recording_max_seconds"):
+    for float_key in ("silence_threshold_seconds", "recording_max_seconds",
+                      "ollama_timeout_s", "groq_timeout_s", "stt_vad_threshold"):
         if not isinstance(cfg.get(float_key), (int, float)):
             default_val = DEFAULT_CONFIG[float_key]
             logger.warning("'%s' must be a number. Resetting to %s.", float_key, default_val)
             cfg[float_key] = default_val
+
+    for bool_key in ("stt_use_vad", "memory_extraction_inline"):
+        if not isinstance(cfg.get(bool_key), bool):
+            default_val = DEFAULT_CONFIG[bool_key]
+            logger.warning("'%s' must be a bool. Resetting to %s.", bool_key, default_val)
+            cfg[bool_key] = default_val
             
     if not isinstance(cfg.get("notification_types"), dict):
         logger.warning("'notification_types' must be a dict. Resetting to default.")

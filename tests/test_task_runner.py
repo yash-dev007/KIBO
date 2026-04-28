@@ -22,6 +22,18 @@ def test_task_runner_add_cancel(tmp_path, monkeypatch):
     tasks = runner.get_tasks()
     assert tasks[0]["state"] == "cancelled"
 
+def test_get_tasks_does_not_expose_internal_state(tmp_path, monkeypatch):
+    config = dict(DEFAULT_CONFIG)
+    monkeypatch.setattr("src.system.task_runner.get_user_data_dir", lambda: tmp_path)
+
+    runner = TaskRunner(config, MagicMock())
+    runner.add_task("Keep safe", "Desc")
+
+    tasks = runner.get_tasks()
+    tasks[0]["state"] = "completed"
+
+    assert runner.get_tasks()[0]["state"] == "pending"
+
 def test_task_runner_approval_blocked(tmp_path, monkeypatch):
     config = dict(DEFAULT_CONFIG)
     monkeypatch.setattr("src.system.task_runner.get_user_data_dir", lambda: tmp_path)

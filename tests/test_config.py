@@ -87,6 +87,12 @@ class TestLoadConfig:
 
 
 class TestNewConfigKeys:
+    def test_repo_config_keys_are_known(self):
+        config_path = Path(__file__).parent.parent / "config.json"
+        repo_config = json.loads(config_path.read_text(encoding="utf-8"))
+        unknown = sorted(set(repo_config) - set(DEFAULT_CONFIG))
+        assert unknown == []
+
     def test_buddy_skin_default(self, tmp_config):
         path = tmp_config({})
         cfg = load_config(path)

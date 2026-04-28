@@ -64,3 +64,44 @@ def test_build_memory_prompt(tmp_path, monkeypatch):
 
     prompt = store.build_memory_prompt("Is KIBO awesome?")
     assert "- KIBO is awesome." in prompt
+
+
+def test_clear_all_facts_clears_retrieval_index(tmp_path, monkeypatch):
+    config = {"memory_enabled": True, "memory_provider": "lexical"}
+    monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
+    store = MemoryStore(config)
+
+    store.add_fact_inline({
+        "category": "preference",
+        "content": "User likes espresso.",
+        "keywords": ["espresso"],
+    })
+    assert len(store.retrieve_relevant("espresso")) == 1
+
+    store.clear_all_facts()
+
+    assert store.retrieve_relevant("espresso") == []
+
+
+def test_memory_cap_evicts_retrieval_index(tmp_path, monkeypatch):
+    config = {
+        "memory_enabled": True,
+        "memory_provider": "lexical",
+        "memory_max_facts": 1,
+    }
+    monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
+    store = MemoryStore(config)
+
+    store.add_fact_inline({
+        "category": "preference",
+        "content": "User likes espresso.",
+        "keywords": ["espresso"],
+    })
+    store.add_fact_inline({
+        "category": "preference",
+        "content": "User likes green tea.",
+        "keywords": ["tea"],
+    })
+
+    assert store.retrieve_relevant("espresso") == []
+    assert len(store.retrieve_relevant("tea")) == 1

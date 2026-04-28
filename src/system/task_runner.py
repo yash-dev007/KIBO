@@ -4,6 +4,7 @@ import uuid
 import datetime
 import threading
 import httpx
+from copy import deepcopy
 from typing import Optional, List, Dict
 from pathlib import Path
 
@@ -35,6 +36,7 @@ class TaskRunner(QObject):
         self._timer.timeout.connect(self._process_queue)
 
         self._active_worker = threading.Event()  # thread-safe: set=busy, clear=idle
+        self._tasks_lock = threading.Lock()
         self._tasks_cache: List[dict] = self._load_tasks_from_disk()
 
     def add_task(self, title: str, description: str, requires_approval: bool = False, source: str = "user") -> str:
@@ -75,11 +77,13 @@ class TaskRunner(QObject):
             return []
 
     def get_tasks(self) -> List[dict]:
-        return list(self._tasks_cache)  # return copy to prevent external mutation
+        with self._tasks_lock:
+            return deepcopy(self._tasks_cache)
 
     def _save_tasks(self, tasks: List[dict]) -> None:
-        self._tasks_cache = tasks
-        self._tasks_file.write_text(json.dumps(tasks, indent=2), "utf-8")
+        with self._tasks_lock:
+            self._tasks_cache = deepcopy(tasks)
+            self._tasks_file.write_text(json.dumps(self._tasks_cache, indent=2), "utf-8")
 
     def approve_task(self, task_id: str) -> None:
         tasks = self.get_tasks()

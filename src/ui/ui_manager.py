@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QApplication, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QLabel, QMenu, QPushButton, QSizePolicy,
+    QApplication, QGraphicsOpacityEffect, QLabel, QMenu, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
 
@@ -63,13 +63,6 @@ class SpeechBubble(QWidget):
         self._label.setFont(QFont("Outfit", 9, QFont.Bold))
         self._label.setStyleSheet("color: #E0E0E0; background: transparent; padding: 4px 6px;")
         self._label.setMaximumWidth(220)
-
-        # Floating drop shadow for modern 3D UI
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 180))
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 20)
@@ -133,13 +126,6 @@ class AboutDialog(QWidget):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedSize(320, 200)
-
-        # Drop shadow
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 200))
-        shadow.setOffset(0, 6)
-        self.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -219,6 +205,7 @@ class UIManager(QWidget):
         super().__init__(parent)
         self._config = config
         self._drag_pos: Optional[QPoint] = None
+        self._press_global_pos: Optional[QPoint] = None
         pet_name = config.get("pet_name", "KIBO")
         skin = config.get("buddy_skin", "skales")
 
@@ -385,7 +372,8 @@ class UIManager(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._press_global_pos = event.globalPosition().toPoint()
+            self._drag_pos = self._press_global_pos - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -395,11 +383,16 @@ class UIManager(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton and self._drag_pos is not None:
-            current_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            delta = (current_pos - self._drag_pos).manhattanLength()
+            release_pos = event.globalPosition().toPoint()
+            delta = (
+                (release_pos - self._press_global_pos).manhattanLength()
+                if self._press_global_pos is not None
+                else 0
+            )
             if delta < 5:
                 self.pet_clicked.emit()
         self._drag_pos = None
+        self._press_global_pos = None
 
     # ------------------------------------------------------------------
     # Context menu
