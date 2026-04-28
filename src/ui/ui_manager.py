@@ -312,15 +312,21 @@ class UIManager(QWidget):
 
     @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:
+        old_skin = self._config.get("buddy_skin", "skales")
+        new_skin = new_config.get("buddy_skin", "skales")
         self._config = new_config
-        # Some settings like bubble timeout require restarting the bubble
-        # or other components. Here we handle what can be updated live.
+
+        # Live speech-bubble settings update
         self._bubble._timeout_ms = new_config.get("speech_bubble_timeout_ms", 5000)
         self.setAttribute(Qt.WA_TranslucentBackground, not new_config.get("opaque_fallback", False))
-        
+
         # If pet name changed, update window title
         pet_name = new_config.get("pet_name", "KIBO")
         self.setWindowTitle(pet_name)
+
+        # Hot-swap skin without restart
+        if new_skin != old_skin:
+            self._apply_skin(new_skin)
 
     # ------------------------------------------------------------------
     # Crossfade
@@ -507,6 +513,30 @@ class UIManager(QWidget):
     def place_on_screen(self) -> None:
         """Position pet in bottom-right corner on first show."""
         self._reset_position()
+
+    def _apply_skin(self, skin: str) -> None:
+        """Hot-swap the animation controller to a new skin — no restart required."""
+        w, h = self._config.get("window_size", [200, 200])
+
+        # Disconnect and stop old controller
+        try:
+            self._anim.frame_ready.disconnect(self._on_frame)
+            self._anim.animation_finished.disconnect(self._on_anim_finished)
+        except RuntimeError:
+            pass
+        self._anim.stop()
+
+        # Build a fresh controller for the new skin
+        self._anim = VideoAnimationController(
+            size=QSize(w, h),
+            skin=skin,
+            frame_rate_ms=self._config.get("frame_rate_ms", 150),
+        )
+        self._anim.frame_ready.connect(self._on_frame)
+        self._anim.animation_finished.connect(self._on_anim_finished)
+        self._anim.switch_to("idle")
+        self._anim.start()
+        logger.info("Skin hot-swapped to '%s'", skin)
 
     def closeEvent(self, event) -> None:
         self._anim.stop()

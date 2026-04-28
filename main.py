@@ -103,6 +103,7 @@ def main() -> int:
     # Settings window
     ui.show_settings.connect(settings_window.show)
     settings_window.settings_changed.connect(ui.on_config_changed)
+    settings_window.settings_changed.connect(brain.on_config_changed)
     settings_window.settings_changed.connect(system_monitor.on_config_changed)
     settings_window.settings_changed.connect(notification_router.on_config_changed)
     settings_window.settings_changed.connect(proactive_engine.on_config_changed)
@@ -148,6 +149,8 @@ def main() -> int:
         chat_window.mic_pressed.connect(brain.on_listening_started)
         chat_window.mic_pressed.connect(voice_thread.on_hotkey_pressed)
         chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
+        
+        settings_window.settings_changed.connect(ai_thread.on_config_changed)
 
         # ── Chat input → AI (queued, thread-safe) ─────────────────────────
         _is_text_chat = False

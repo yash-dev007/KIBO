@@ -1,26 +1,26 @@
 """
-animation_engine.py — Animation controllers for KIBO.
+animation_engine.py — WebM-only animation controller for KIBO.
 
-Two controllers are provided:
-  • PngAnimationController  — cycles pre-loaded PNG frame sequences via QTimer.
-  • VideoAnimationController — plays WebM videos via QMediaPlayer + QVideoSink,
-    with automatic PNG fallback if no .webm file is found or the asset lacks
-    native VP9 alpha.
+VideoAnimationController plays WebM clips via QMediaPlayer + QVideoSink.
 
-Video Frame Pipeline:
+Frame Pipeline:
   1. QVideoFrame arrives from the media decoder (WMF backend, set in main.py).
-  2. Convert → QImage, downscale to widget size FIRST (huge pixel reduction).
-  3. Probe native alpha on the first frame of each clip.
-  4. If native alpha present → emit pixmap directly (zero CPU chroma-key).
-  5. If no native alpha → log a warning and switch to PNG fallback.
-     Run scripts/preprocess_alpha.py to bake transparency into WebM assets.
+  2. Convert → QImage, downscale to widget size.
+  3. Probe native alpha on first frame of each clip.
+  4. If native alpha present  → emit pixmap directly (zero CPU work).
+  5. If no native alpha       → apply numpy chroma-key (remove green screen)
+                                then emit pixmap.
+
+There is NO PNG fallback. All animation assets must be .webm files.
+To bake alpha into green-screen WebMs in advance, run:
+    python scripts/preprocess_alpha.py   (requires ffmpeg on PATH)
 """
 
 import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QObject, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QObject, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 
@@ -31,125 +31,15 @@ logger = logging.getLogger(__name__)
 ASSETS_DIR = get_bundle_dir() / "assets" / "animations"
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# PNG Animation Controller
-# ═══════════════════════════════════════════════════════════════════════
-
-class PngAnimationController(QObject):
-    """Cycles pre-loaded PNG frame sequences. Supports looping and one-shot."""
-
-    frame_ready = Signal(QPixmap)
-    animation_finished = Signal()
-
-    def __init__(self, size: QSize, frame_rate_ms: int, skin: str) -> None:
-        super().__init__()
-        self._size = size
-        self._frame_rate_ms = frame_rate_ms
-        self._skin = skin
-        self._frames: dict[str, list[QPixmap]] = {}
-        self._current: str = "idle"
-        self._index: int = 0
-        self._loop: bool = True
-
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._advance)
-
-    # ── Asset resolution ────────────────────────────────────────────────
-
-    def _resolve_path(self, name: str) -> Optional[Path]:
-        """Try <skin>/<category>/<clip>/ then <category>/<clip>/."""
-        if "/" in name:
-            category, clip = name.split("/", 1)
-        else:
-            category, clip = name, name
-
-        for base in (ASSETS_DIR / self._skin, ASSETS_DIR):
-            candidate = base / category / clip
-            if candidate.is_dir():
-                return candidate
-        # Legacy flat layout: <skin>_<name>/
-        for base in (ASSETS_DIR,):
-            for prefix in (f"{self._skin}_{name}", name):
-                candidate = base / prefix
-                if candidate.is_dir():
-                    return candidate
-        return None
-
-    # ── Loading ─────────────────────────────────────────────────────────
-
-    def load(self, name: str) -> bool:
-        if name in self._frames:
-            return True
-        folder = self._resolve_path(name)
-        if folder is None:
-            return False
-        pngs = sorted(folder.glob("frame_*.png"))
-        if not pngs:
-            return False
-        self._frames[name] = [
-            QPixmap(str(p)).scaled(self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            for p in pngs
-        ]
-        return True
-
-    def preload_all(self) -> None:
-        if not ASSETS_DIR.exists():
-            return
-        for d in ASSETS_DIR.iterdir():
-            if d.is_dir():
-                self.load(d.name)
-
-    # ── Playback control ────────────────────────────────────────────────
-
-    def switch_to(self, name: str, loop: bool = True) -> None:
-        if name == self._current and loop == self._loop:
-            return
-        if name not in self._frames and not self.load(name):
-            name = "idle"
-            if name not in self._frames:
-                return
-        self._current = name
-        self._index = 0
-        self._loop = loop
-        self._emit_current()
-
-    def start(self) -> None:
-        self._timer.start(self._frame_rate_ms)
-
-    def stop(self) -> None:
-        self._timer.stop()
-
-    # ── Internal ────────────────────────────────────────────────────────
-
-    def _advance(self) -> None:
-        frames = self._frames.get(self._current)
-        if not frames:
-            return
-        nxt = self._index + 1
-        if nxt >= len(frames):
-            if self._loop:
-                nxt = 0
-            else:
-                self.animation_finished.emit()
-                return
-        self._index = nxt
-        self._emit_current()
-
-    def _emit_current(self) -> None:
-        frames = self._frames.get(self._current)
-        if frames:
-            self.frame_ready.emit(frames[self._index])
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Video Animation Controller
-# ═══════════════════════════════════════════════════════════════════════
-
 class VideoAnimationController(QObject):
-    """Plays WebM videos with native alpha or chroma-key fallback."""
+    """Plays WebM videos with native alpha or on-the-fly chroma-key."""
 
     frame_ready = Signal(QPixmap)
     animation_finished = Signal()
+
+    # Green-screen removal thresholds (match preprocess_alpha.py defaults)
+    _CHROMA_SIMILARITY = 0.35
+    _CHROMA_BLEND = 0.10
 
     def __init__(self, size: QSize, skin: str, frame_rate_ms: int = 150) -> None:
         super().__init__()
@@ -157,28 +47,18 @@ class VideoAnimationController(QObject):
         self._skin = skin
         self._loop = True
         self._current_animation = ""
+        self._has_native_alpha: Optional[bool] = None
 
-        # Media pipeline
         self._player = QMediaPlayer(self)
         self._sink = QVideoSink(self)
         self._player.setVideoOutput(self._sink)
         self._sink.videoFrameChanged.connect(self._on_frame)
-        self._player.playbackStateChanged.connect(self._on_state_changed)
         self._player.mediaStatusChanged.connect(self._on_media_status_changed)
-        self._switching = False  # True while setSource+play is in-flight; gates PNG fallback
-
-        # PNG fallback
-        self._png = PngAnimationController(size, frame_rate_ms, skin)
-        self._png.frame_ready.connect(self.frame_ready.emit)
-        self._png.animation_finished.connect(self.animation_finished.emit)
-        self._using_png = False
-
-        # Track whether the decoder provides alpha so we can skip chroma-key
-        self._has_native_alpha: Optional[bool] = None
 
     # ── WebM path resolution ────────────────────────────────────────────
 
     def _resolve_webm(self, name: str) -> Optional[Path]:
+        """Resolve category/clip → .webm path under skin or root."""
         if "/" in name:
             category, clip = name.split("/", 1)
         else:
@@ -193,8 +73,11 @@ class VideoAnimationController(QObject):
     # ── Playback control ────────────────────────────────────────────────
 
     def switch_to(self, name: str, loop: bool = True) -> None:
-        if (name == self._current_animation and loop == self._loop
-                and self._player.playbackState() == QMediaPlayer.PlayingState):
+        if (
+            name == self._current_animation
+            and loop == self._loop
+            and self._player.playbackState() == QMediaPlayer.PlayingState
+        ):
             return
 
         self._current_animation = name
@@ -203,66 +86,57 @@ class VideoAnimationController(QObject):
 
         webm = self._resolve_webm(name)
         if webm:
-            self._using_png = False
-            self._png.stop()
-            self._switching = True  # suppress PNG fallback until PlayingState fires
             self._player.setLoops(QMediaPlayer.Infinite if loop else 1)
             self._player.setSource(QUrl.fromLocalFile(str(webm)))
             self._player.play()
         else:
-            self._using_png = True
-            self._player.stop()
-            self._png.switch_to(name, loop)
-            self._png.start()
+            logger.warning(
+                "No WebM found for animation '%s' (skin=%s). "
+                "Ensure assets/animations/%s/%s/<clip>.webm exists.",
+                name, self._skin, self._skin, name.split("/")[0],
+            )
 
     def start(self) -> None:
-        if self._using_png:
-            self._png.start()
-        elif self._player.playbackState() != QMediaPlayer.PlayingState:
+        if self._player.playbackState() != QMediaPlayer.PlayingState:
             self._player.play()
 
     def stop(self) -> None:
         self._player.stop()
-        self._png.stop()
 
     # ── Per-frame processing ────────────────────────────────────────────
 
     def _on_frame(self, frame: QVideoFrame) -> None:
         if not frame.isValid():
             return
-
         image = frame.toImage()
         if image.isNull():
             return
 
-        # Downscale first — drastically reduces pixel count (~500k → ~40k)
+        # Downscale first — drastically reduces per-pixel work
         image = image.scaled(self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         image = image.convertToFormat(QImage.Format.Format_ARGB32)
 
+        # Probe once per clip
         if self._has_native_alpha is None:
             self._has_native_alpha = self._probe_alpha(image)
             if self._has_native_alpha:
                 logger.debug("Native VP9 alpha detected for '%s'", self._current_animation)
             else:
-                logger.warning(
-                    "WebM '%s' has no native alpha channel — falling back to PNG. "
-                    "Run scripts/preprocess_alpha.py to bake transparency into assets.",
+                logger.debug(
+                    "No native alpha for '%s' — applying software chroma-key.",
                     self._current_animation,
                 )
-                self._switch_to_png_fallback()
-                return
 
-        if self._has_native_alpha:
-            self.frame_ready.emit(QPixmap.fromImage(image))
+        if not self._has_native_alpha:
+            image = self._chroma_key(image)
 
-    # ── Alpha probe (pure Qt, no numpy) ────────────────────────────────
+        self.frame_ready.emit(QPixmap.fromImage(image))
+
+    # ── Alpha probe ────────────────────────────────────────────────────
 
     @staticmethod
     def _probe_alpha(image: QImage) -> bool:
-        """Return True if the image already contains non-opaque pixels.
-
-        Samples 6 border points to detect native VP9 alpha without numpy.
-        """
+        """Return True if the image already contains non-opaque pixels."""
         w, h = image.width(), image.height()
         sample_points = [
             (0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1),
@@ -270,32 +144,57 @@ class VideoAnimationController(QObject):
         ]
         return any(QColor(image.pixel(x, y)).alpha() < 250 for x, y in sample_points)
 
-    def _switch_to_png_fallback(self) -> None:
-        self._using_png = True
-        self._player.stop()
-        self._png.switch_to(self._current_animation, self._loop)
-        self._png.start()
+    # ── Software chroma-key ────────────────────────────────────────────
 
-    # ── Playback state ──────────────────────────────────────────────────
+    def _chroma_key(self, image: QImage) -> QImage:
+        """Remove chroma-key background via numpy vectorised chroma-key.
 
-    def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
-        if state == QMediaPlayer.PlayingState:
-            self._switching = False  # new clip is actually playing — safe to handle errors again
-            return
-        if state != QMediaPlayer.StoppedState:
-            return
-        if self._switching:
-            return  # stop was caused by setSource during a switch; not an error
+        Dynamically samples the top-left pixel to determine the background color.
+        """
+        try:
+            import numpy as np
 
-        # Unexpected stop (not natural EndOfMedia) → decoder error, fall back to PNG
-        if self._player.mediaStatus() != QMediaPlayer.MediaStatus.EndOfMedia:
-            logger.warning(
-                "Video stopped unexpectedly (status=%s), falling back to PNG",
-                self._player.mediaStatus(),
+            ptr = image.bits()
+            # ARGB32 on little-endian x86: bytes in memory are B, G, R, A
+            arr = (
+                np.frombuffer(ptr, dtype=np.uint8)
+                .copy()
+                .reshape((image.height(), image.width(), 4))
             )
-            self._switch_to_png_fallback()
+
+            # Sample top-left pixel as the background color
+            bg_b = arr[0, 0, 0].astype(np.float32) / 255.0
+            bg_g = arr[0, 0, 1].astype(np.float32) / 255.0
+            bg_r = arr[0, 0, 2].astype(np.float32) / 255.0
+
+            b = arr[:, :, 0].astype(np.float32) / 255.0
+            g = arr[:, :, 1].astype(np.float32) / 255.0
+            r = arr[:, :, 2].astype(np.float32) / 255.0
+
+            dist = np.sqrt((r - bg_r) ** 2 + (g - bg_g) ** 2 + (b - bg_b) ** 2)
+
+            # Ramp: fully transparent within similarity, fully opaque after +blend
+            alpha = np.clip(
+                (dist - self._CHROMA_SIMILARITY) / self._CHROMA_BLEND, 0.0, 1.0
+            )
+            arr[:, :, 3] = (alpha * 255).astype(np.uint8)
+
+            result = QImage(
+                arr.tobytes(), image.width(), image.height(),
+                QImage.Format_ARGB32,
+            )
+            return result.copy()  # detach from the numpy buffer lifetime
+
+        except ImportError:
+            logger.warning(
+                "numpy not available — chroma-key skipped, character may show solid "
+                "background. Install numpy or run scripts/preprocess_alpha.py."
+            )
+            return image
+
+    # ── Media status ────────────────────────────────────────────────────
 
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
-        """Emit animation_finished for one-shot clips when the video truly ends."""
+        """Emit animation_finished for one-shot clips when the video ends."""
         if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._loop:
             self.animation_finished.emit()

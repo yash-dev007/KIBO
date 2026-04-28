@@ -1,6 +1,6 @@
 import json
 import logging
-import types
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from PySide6.QtCore import Qt, Signal, QPoint
@@ -19,6 +19,19 @@ class SettingsWindow(QWidget):
     settings_changed = Signal(dict)
     closed = Signal()
     clear_memory_requested = Signal()
+
+    @staticmethod
+    def _discover_skins() -> list[str]:
+        """Return sorted list of skin names from assets/animations/."""
+        from src.core.config_manager import get_bundle_dir
+        anim_dir = get_bundle_dir() / "assets" / "animations"
+        if not anim_dir.is_dir():
+            return ["skales"]
+        skins = sorted(
+            d.name for d in anim_dir.iterdir()
+            if d.is_dir() and (d / "idle").is_dir()
+        )
+        return skins if skins else ["skales"]
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -152,7 +165,7 @@ class SettingsWindow(QWidget):
         layout.addRow("Pet Name:", self.f_pet_name)
         
         self.f_buddy_skin = QComboBox()
-        self.f_buddy_skin.addItems(["skales"])
+        self.f_buddy_skin.addItems(self._discover_skins())
         layout.addRow("Buddy Skin:", self.f_buddy_skin)
         
         self.f_hotkey = QLineEdit()

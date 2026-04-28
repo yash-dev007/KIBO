@@ -50,11 +50,14 @@ def convert(path: Path) -> None:
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False, dir=path.parent) as tmp:
         tmp_path = Path(tmp.name)
 
+    skin_name = path.parent.parent.name
+    bg_color = "0x0000ff" if skin_name == "skales" else "0x00ff00"
+
     try:
         subprocess.run(
             [
                 "ffmpeg", "-y", "-i", str(path),
-                "-vf", f"colorkey={GREEN}:{SIMILARITY}:{BLEND}",
+                "-vf", f"colorkey={bg_color}:{SIMILARITY}:{BLEND}",
                 "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
                 "-b:v", "0", "-crf", "33",
                 str(tmp_path),

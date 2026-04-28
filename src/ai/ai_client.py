@@ -66,6 +66,25 @@ class AIClient(QObject):
     def check_ollama(self) -> bool:
         return self._provider is not None and self._provider.is_available()
 
+    # ------------------------------------------------------------------ #
+    # Configuration and Slots
+    # ------------------------------------------------------------------ #
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        self._config = new_config
+        self._system_prompt = new_config.get(
+            "system_prompt",
+            "You are KIBO, a helpful desktop assistant.",
+        )
+        self._history_limit = int(new_config.get("conversation_history_limit", 10))
+        self._inline_memory = bool(new_config.get("memory_extraction_inline", True))
+        
+        try:
+            self._provider = get_provider(new_config)
+        except RuntimeError as exc:
+            self._provider = None
+            logger.error("No LLM provider available: %s", exc)
+
     def cancel_current(self) -> None:
         """Thread-safe: abort the in-flight stream."""
         self._cancel_event.set()
@@ -73,6 +92,12 @@ class AIClient(QObject):
     @Slot(str)
     def send_query(self, user_text: str) -> None:
         """Slot: send user_text and stream the response."""
+        if self._provider is None:
+            try:
+                self._provider = get_provider(self._config)
+            except RuntimeError:
+                pass
+                
         if self._provider is None:
             self.error_occurred.emit(
                 "No LLM provider configured. Set GROQ_API_KEY or start Ollama."
@@ -95,6 +120,10 @@ class AIClient(QObject):
         tools = [REMEMBER_TOOL_SCHEMA] if self._inline_memory else None
 
         full_response = ""
+        json_buffer = ""
+        is_json_stream = False
+        fact_extracted = False
+        
         try:
             for chunk in self._provider.stream_chat(
                 system=system, messages=list(self._history), tools=tools
@@ -106,15 +135,54 @@ class AIClient(QObject):
                     return
 
                 if chunk.text_delta:
-                    full_response += chunk.text_delta
-                    self.response_chunk.emit(chunk.text_delta)
+                    # Buffer if it's the very first chunk and looks like JSON
+                    if not full_response and not json_buffer and chunk.text_delta.strip().startswith("{"):
+                        is_json_stream = True
+                        self.response_chunk.emit("\n[Extracting memory...]\n")
+                        full_response += "\n[Extracting memory...]\n"
+                        
+                    if is_json_stream:
+                        json_buffer += chunk.text_delta
+                    else:
+                        full_response += chunk.text_delta
+                        self.response_chunk.emit(chunk.text_delta)
 
-                if chunk.tool_call and chunk.tool_call.name == "remember":
+                if chunk.tool_call:
                     args = chunk.tool_call.arguments
                     if _valid_memory(args):
                         self.memory_fact_extracted.emit(args)
+                        fact_extracted = True
 
                 if chunk.done:
+                    # Rescue hallucinated tool calls
+                    if is_json_stream and json_buffer:
+                        import json
+                        rescued = False
+                        text_to_parse = json_buffer.strip()
+                        
+                        while text_to_parse:
+                            try:
+                                data = json.loads(text_to_parse)
+                                if isinstance(data, dict) and ("parameters" in data or "arguments" in data):
+                                    args = data.get("parameters") or data.get("arguments", {})
+                                    if _valid_memory(args):
+                                        self.memory_fact_extracted.emit(args)
+                                        rescued = True
+                                        fact_extracted = True
+                                        break
+                                break
+                            except Exception:
+                                last_brace = text_to_parse.rfind("}", 0, len(text_to_parse) - 1)
+                                if last_brace == -1:
+                                    break
+                                text_to_parse = text_to_parse[:last_brace + 1]
+                        
+                        if rescued:
+                            # We will handle full_response globally below
+                            pass
+                        elif not rescued:
+                            full_response += json_buffer
+                            self.response_chunk.emit(json_buffer)
                     break
 
         except Exception as exc:
@@ -122,6 +190,11 @@ class AIClient(QObject):
             logger.error(msg)
             self.error_occurred.emit(msg)
             return
+
+        if fact_extracted:
+            ack = "\nGot it! I've saved that to my memory."
+            full_response += ack
+            self.response_chunk.emit(ack)
 
         if full_response:
             self._history.append({"role": "assistant", "content": full_response})
@@ -138,11 +211,27 @@ class AIClient(QObject):
 
 
 def _valid_memory(args: dict) -> bool:
+    if not isinstance(args, dict):
+        return False
+        
+    # Unnest if the LLM hallucinates `{"content": {"content": ...}}`
+    if isinstance(args.get("content"), dict) and "content" in args["content"]:
+        nested = args["content"]
+        args["content"] = nested.get("content", "")
+        args["category"] = nested.get("category", args.get("category"))
+        args["keywords"] = nested.get("keywords", args.get("keywords", []))
+
+    # Force types if the LLM hallucinates schema structures instead of values
+    if isinstance(args.get("content"), dict):
+        args["content"] = str(args.get("content", ""))
+    if not isinstance(args.get("keywords"), list):
+        args["keywords"] = []
+    if not isinstance(args.get("category"), str):
+        args["category"] = "fact"
+
     return (
-        isinstance(args, dict)
-        and isinstance(args.get("content"), str)
+        isinstance(args.get("content"), str)
         and len(args["content"].strip()) > 0
-        and isinstance(args.get("keywords"), list)
     )
 
 
@@ -176,6 +265,10 @@ class AIThread(QThread):
 
     def cancel_current(self) -> None:
         self._client.cancel_current()
+
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        self._client.on_config_changed(new_config)
 
     def stop(self) -> None:
         self.quit()

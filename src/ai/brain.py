@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Optional
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from src.core.config_manager import get_bundle_dir
 
@@ -103,6 +103,7 @@ class Brain(QObject):
         self._skin: str = config.get("buddy_skin", "skales")
         self._available_actions: list[str] = self._discover_actions()
         self._action_bag: list[str] = []
+        self._available_idles: list[str] = self._discover_idles()
 
         # Determine initial state: INTRO if assets exist, else IDLE
         self._has_intro = self._check_intro_exists()
@@ -170,8 +171,38 @@ class Brain(QObject):
         ]
 
     # ------------------------------------------------------------------
-    # Action discovery
+    # Action and Idle discovery
     # ------------------------------------------------------------------
+
+    def _discover_idles(self) -> list[str]:
+        """Scan assets/animations/{skin}/idle/ for .webm clips."""
+        idles = []
+        idle_dir = ASSETS_DIR / self._skin / "idle"
+        if idle_dir.exists() and idle_dir.is_dir():
+            for p in idle_dir.iterdir():
+                if p.is_file() and p.name.endswith(".webm"):
+                    idles.append(p.stem)
+        return sorted(list(set(idles)))
+
+    def _get_anim_for_state(self, state: PetState) -> str:
+        """Resolve a state to a valid animation clip path, falling back if needed."""
+        base_anim = STATE_ANIMATION.get(state, "idle/stand")
+        if "/" not in base_anim:
+            return base_anim
+            
+        category, clip = base_anim.split("/", 1)
+        path = ASSETS_DIR / self._skin / category / f"{clip}.webm"
+        if path.is_file():
+            return base_anim
+            
+        # Fallback if hardcoded anim doesn't exist for this skin
+        if category == "idle" and self._available_idles:
+            return f"idle/{self._available_idles[0]}"
+        elif category == "action" and self._available_actions:
+            return f"action/{self._pick_action()}"
+            
+        # Ultimate fallback
+        return f"idle/{self._available_idles[0]}" if self._available_idles else "idle/idle"
 
     def _discover_actions(self) -> list[str]:
         """Scan assets/animations/{skin}/action/ for .webm clips."""
@@ -270,7 +301,7 @@ class Brain(QObject):
         return BrainOutput(
             state=PetState.IDLE,
             speech_text=None,
-            animation_name=STATE_ANIMATION[PetState.IDLE],
+            animation_name=self._get_anim_for_state(PetState.IDLE),
         )
 
     # ------------------------------------------------------------------
@@ -285,7 +316,7 @@ class Brain(QObject):
             output = BrainOutput(
                 state=PetState.IDLE,
                 speech_text=None,
-                animation_name=STATE_ANIMATION[PetState.IDLE],
+                animation_name=self._get_anim_for_state(PetState.IDLE),
             )
             self.brain_output.emit(output)
             self._start_action_timer()
@@ -296,7 +327,7 @@ class Brain(QObject):
             output = BrainOutput(
                 state=PetState.IDLE,
                 speech_text=None,
-                animation_name=STATE_ANIMATION[PetState.IDLE],
+                animation_name=self._get_anim_for_state(PetState.IDLE),
             )
             self.brain_output.emit(output)
             self._start_action_timer()
@@ -341,7 +372,7 @@ class Brain(QObject):
         output = BrainOutput(
             state=new_state,
             speech_text=speech,
-            animation_name=STATE_ANIMATION[new_state],
+            animation_name=self._get_anim_for_state(new_state),
         )
         self.brain_output.emit(output)
 
@@ -368,10 +399,39 @@ class Brain(QObject):
         output = BrainOutput(
             state=PetState.IDLE,
             speech_text=None,
-            animation_name=STATE_ANIMATION[PetState.IDLE],
+            animation_name=self._get_anim_for_state(PetState.IDLE),
         )
         self.brain_output.emit(output)
         self._start_action_timer()
+
+    # ------------------------------------------------------------------
+    # Config changes
+    # ------------------------------------------------------------------
+
+    @Slot(dict)
+    def on_config_changed(self, new_config: dict) -> None:
+        """Handle live skin updates without restarting."""
+        old_skin = self._skin
+        new_skin = new_config.get("buddy_skin", "skales")
+        
+        if old_skin != new_skin:
+            self._skin = new_skin
+            self._available_actions = self._discover_actions()
+            self._action_bag = []
+            self._available_idles = self._discover_idles()
+            self._has_intro = self._check_intro_exists()
+            logger.info("Brain updated skin from '%s' to '%s'", old_skin, new_skin)
+            
+            # Immediately transition to IDLE with the new skin's animations
+            self._current_state = PetState.IDLE
+            self._ai_state = None
+            output = BrainOutput(
+                state=PetState.IDLE,
+                speech_text=None,
+                animation_name=self._get_anim_for_state(PetState.IDLE),
+            )
+            self.brain_output.emit(output)
+            self._start_action_timer()
 
     # ------------------------------------------------------------------
     # Internal
@@ -384,7 +444,7 @@ class Brain(QObject):
         if state in (PetState.THINKING, PetState.TALKING):
             anim_name = f"action/{self._pick_action()}"
         else:
-            anim_name = STATE_ANIMATION[state]
+            anim_name = self._get_anim_for_state(state)
             
         output = BrainOutput(
             state=state,
