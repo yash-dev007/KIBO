@@ -28,6 +28,12 @@ build/
 dist/
 *.spec
 
+# Rust crate (deleted Phase 3C — restore if Rust perf work resumes)
+kibo_core/
+
+# Saved clips
+.kibo/clips/
+
 # Reference projects (local analysis only — never commit)
 REF_PROJECT/
 

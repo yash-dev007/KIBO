@@ -1,57 +1,34 @@
 """
-animation_engine.py — High-performance animation controllers for KIBO.
+animation_engine.py — Animation controllers for KIBO.
 
 Two controllers are provided:
   • PngAnimationController  — cycles pre-loaded PNG frame sequences via QTimer.
   • VideoAnimationController — plays WebM videos via QMediaPlayer + QVideoSink,
-    with automatic PNG fallback if no .webm file is found.
+    with automatic PNG fallback if no .webm file is found or the asset lacks
+    native VP9 alpha.
 
-Video Frame Pipeline (optimised):
-  1. QVideoFrame arrives from the media decoder.
+Video Frame Pipeline:
+  1. QVideoFrame arrives from the media decoder (WMF backend, set in main.py).
   2. Convert → QImage, downscale to widget size FIRST (huge pixel reduction).
-  3. Fast-path: if the decoder already delivered an alpha channel, skip numpy.
-  4. Slow-path: chroma-key the background colour away with soft-edge anti-alias
-     and colour despill, all on the tiny downscaled image.
-
-The WMF backend (set via QT_MEDIA_BACKEND=windows in main.py) natively decodes
-VP9 alpha, so the fast-path fires almost every frame on Windows 10/11 with the
-Web Media Extensions codec pack installed.
+  3. Probe native alpha on the first frame of each clip.
+  4. If native alpha present → emit pixmap directly (zero CPU chroma-key).
+  5. If no native alpha → log a warning and switch to PNG fallback.
+     Run scripts/preprocess_alpha.py to bake transparency into WebM assets.
 """
 
 import logging
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 
 from src.core.config_manager import get_bundle_dir
 
-# ── Try Rust native chroma-key, fall back to numpy ──────────────────────
-try:
-    import kibo_core
-    _HAS_RUST_CK = True
-except ImportError:
-    _HAS_RUST_CK = False
-
 logger = logging.getLogger(__name__)
 
-if _HAS_RUST_CK:
-    logger.info("Rust chroma-key loaded (kibo_core) — native performance")
-else:
-    logger.info("Rust chroma-key not available — using numpy fallback")
-
 ASSETS_DIR = get_bundle_dir() / "assets" / "animations"
-
-# ── Chroma-key constants ────────────────────────────────────────────────
-# Pixels whose max-channel distance from the background is below CORE are
-# fully transparent.  Between CORE and EDGE they fade linearly.
-# Tighter thresholds protect lighter features (eyes, highlights) from
-# being eaten by the chroma-key.
-_CK_CORE_THRESHOLD = 40
-_CK_EDGE_THRESHOLD = 85
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -258,99 +235,46 @@ class VideoAnimationController(QObject):
         if image.isNull():
             return
 
-        # 1. Downscale FIRST — drastically reduces pixel count for any
-        #    subsequent processing (from ~500k+ pixels to ~40k).
-        image = image.scaled(
-            self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-
-        # 2. Ensure ARGB32 for alpha support
+        # Downscale first — drastically reduces pixel count (~500k → ~40k)
+        image = image.scaled(self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         image = image.convertToFormat(QImage.Format.Format_ARGB32)
 
-        # 3. Probe native alpha on the first frame of each clip
         if self._has_native_alpha is None:
             self._has_native_alpha = self._probe_alpha(image)
             if self._has_native_alpha:
-                logger.debug("Native VP9 alpha detected — chroma-key disabled")
+                logger.debug("Native VP9 alpha detected for '%s'", self._current_animation)
+            else:
+                logger.warning(
+                    "WebM '%s' has no native alpha channel — falling back to PNG. "
+                    "Run scripts/preprocess_alpha.py to bake transparency into assets.",
+                    self._current_animation,
+                )
+                self._switch_to_png_fallback()
+                return
 
-        # 4. Fast path — decoder already gave us transparency
         if self._has_native_alpha:
             self.frame_ready.emit(QPixmap.fromImage(image))
-            return
 
-        # 5. Slow path — software chroma-key
-        pixmap = self._chroma_key(image)
-        self.frame_ready.emit(pixmap)
-
-    # ── Alpha probe ─────────────────────────────────────────────────────
+    # ── Alpha probe (pure Qt, no numpy) ────────────────────────────────
 
     @staticmethod
     def _probe_alpha(image: QImage) -> bool:
         """Return True if the image already contains non-opaque pixels.
 
-        Samples corners, edge midpoints, and a center patch to avoid
-        false negatives from videos with near-opaque borders.
+        Samples 6 border points to detect native VP9 alpha without numpy.
         """
         w, h = image.width(), image.height()
-        arr = np.frombuffer(image.bits(), np.uint8).reshape((h, w, 4))
-
-        # Sample corners (5×5 patches)
-        s = 5
-        patches = [
-            arr[:s, :s, 3],         # top-left
-            arr[:s, -s:, 3],        # top-right
-            arr[-s:, :s, 3],        # bottom-left
-            arr[-s:, -s:, 3],       # bottom-right
-            arr[:s, w//2-s:w//2+s, 3],  # top-center
-            arr[-s:, w//2-s:w//2+s, 3], # bottom-center
+        sample_points = [
+            (0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1),
+            (w // 2, 0), (w // 2, h - 1),
         ]
-        border = np.concatenate([p.ravel() for p in patches])
-        return bool(np.any(border < 250))
+        return any(QColor(image.pixel(x, y)).alpha() < 250 for x, y in sample_points)
 
-    # ── Software chroma-key ─────────────────────────────────────────────
-
-    @staticmethod
-    def _chroma_key(image: QImage) -> QPixmap:
-        """Remove solid-colour background with soft edges and despill."""
-        w, h = image.width(), image.height()
-
-        if _HAS_RUST_CK:
-            # ── Rust fast path — kibo_core.chroma_key ──────────────────
-            ptr = image.bits()
-            raw = bytes(ptr)
-            keyed_bytes = kibo_core.chroma_key(
-                raw, w, h, _CK_CORE_THRESHOLD, _CK_EDGE_THRESHOLD
-            )
-            keyed = QImage(keyed_bytes, w, h, w * 4, QImage.Format.Format_ARGB32).copy()
-            return QPixmap.fromImage(keyed)
-
-        # ── Numpy fallback ──────────────────────────────────────────────
-        ptr = image.bits()
-        arr = np.frombuffer(ptr, np.uint8).reshape((h, w, 4)).copy()
-
-        bg = arr[0, 0, :3].astype(np.int16)
-        diff = np.abs(arr[:, :, :3].astype(np.int16) - bg)
-        max_diff = np.max(diff, axis=-1)
-
-        # Core background → fully transparent
-        arr[max_diff < _CK_CORE_THRESHOLD, 3] = 0
-
-        # Fringe → soft alpha edge + colour despill
-        fringe = (max_diff >= _CK_CORE_THRESHOLD) & (max_diff < _CK_EDGE_THRESHOLD)
-        if np.any(fringe):
-            span = float(_CK_EDGE_THRESHOLD - _CK_CORE_THRESHOLD)
-            alpha = (max_diff[fringe] - _CK_CORE_THRESHOLD) / span
-            arr[fringe, 3] = (arr[fringe, 3].astype(np.float32) * alpha).astype(np.uint8)
-
-            # Despill: clamp the dominant background channel
-            dom = int(np.argmax(bg))
-            others = [i for i in range(3) if i != dom]
-            avg = (arr[fringe, others[0]].astype(np.uint16)
-                   + arr[fringe, others[1]].astype(np.uint16)) // 2
-            arr[fringe, dom] = np.minimum(arr[fringe, dom], avg)
-
-        keyed = QImage(arr.tobytes(), w, h, QImage.Format.Format_ARGB32).copy()
-        return QPixmap.fromImage(keyed)
+    def _switch_to_png_fallback(self) -> None:
+        self._using_png = True
+        self._player.stop()
+        self._png.switch_to(self._current_animation, self._loop)
+        self._png.start()
 
     # ── Playback state ──────────────────────────────────────────────────
 
@@ -369,9 +293,7 @@ class VideoAnimationController(QObject):
                 "Video stopped unexpectedly (status=%s), falling back to PNG",
                 self._player.mediaStatus(),
             )
-            self._using_png = True
-            self._png.switch_to(self._current_animation, self._loop)
-            self._png.start()
+            self._switch_to_png_fallback()
 
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         """Emit animation_finished for one-shot clips when the video truly ends."""

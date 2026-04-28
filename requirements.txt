@@ -29,6 +29,10 @@ google-api-python-client>=2.115.0
 sqlite-vec>=0.1.9
 fastembed>=0.3.0
 
+# --- Clip Mode (Phase 3A) ---
+# Encodes animation frame ring-buffer to animated WebP for sharing.
+Pillow>=10.0.0
+
 # --- Tests ---
 pytest>=8.0.0
 pytest-cov>=5.0.0

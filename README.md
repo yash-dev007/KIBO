@@ -1,112 +1,261 @@
 <div align="center">
 
-  <h1>🦎 KIBO v4: The Elite Desktop AI Companion</h1>
-  <p><strong>A Hardware-Accelerated, Long-Term Memory, Multi-Integrated Virtual Companion</strong></p>
+<br/>
 
-  <p>
-    <a href="https://github.com/yash-dev007/KIBO/stargazers"><img src="https://img.shields.io/github/stars/yash-dev007/KIBO?style=for-the-badge&color=00FF88" alt="Stars" /></a>
-    <a href="https://github.com/yash-dev007/KIBO/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License" /></a>
-    <img src="https://img.shields.io/badge/Engine-WebM_Video-00FF88?style=for-the-badge&logo=youtube" alt="Engine" />
-    <img src="https://img.shields.io/badge/UI-Black_Glass-000000?style=for-the-badge&logo=windowsterminal" alt="UI" />
-    <img src="https://img.shields.io/badge/Performance-Main_Thread_Safe-00FF88?style=for-the-badge&logo=fastapi" alt="Performance" />
-    <img src="https://img.shields.io/badge/Memory-Async_RAG-FFD700?style=for-the-badge&logo=memory" alt="Memory" />
-    <img src="https://img.shields.io/badge/AI-Ollama-FFD700?style=for-the-badge&logo=ollama" alt="AI" />
-    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python" alt="Python" />
-  </p>
+<img src="assets/branding/kibo-banner.png" alt="KIBO" width="120" />
+
+# KIBO
+
+### A desktop companion that lives on your screen, reacts to what you're doing, and remembers you.
+
+<br/>
+
+[![Stars](https://img.shields.io/github/stars/yash-dev007/KIBO?style=flat-square&color=FFD700&labelColor=1a1a1a)](https://github.com/yash-dev007/KIBO/stargazers)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square&labelColor=1a1a1a)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=1a1a1a)](https://www.python.org/)
+[![PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?style=flat-square&labelColor=1a1a1a)](https://doc.qt.io/qtforpython/)
+[![LLM: Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Ollama-F54F29?style=flat-square&labelColor=1a1a1a)](https://console.groq.com)
+
+<br/>
+
+> **KIBO is not a chatbot widget. It's a frameless, transparent animated character that sits on your desktop, listens for your voice, responds with neural TTS, and builds persistent long-term memory — all running locally.**
+
+<br/>
+
 </div>
 
 ---
 
-## 🌟 Overview
-**KIBO** is an elite desktop companion that bridges the gap between static virtual pets and autonomous AI agents. Unlike traditional apps, KIBO lives directly on your desktop as a frameless, glass-textured mascot. KIBO reacts in real-time to your CPU load, active windows, calendar meetings, and background tasks, all while maintaining a persistent memory of your preferences using a secure local AI backend.
+## What makes KIBO different
+
+| | KIBO | Typical AI widget |
+|---|---|---|
+| **Latency** | ~1.2s voice round-trip | 3–8s |
+| **TTS** | Piper neural (streaming, sentence-level) | pyttsx3 / browser |
+| **Memory** | Vector RAG (sqlite-vec + bge-small) | Session-only |
+| **Rendering** | VP9 alpha WebM, zero CPU chroma-key | PNG sequences or browser canvas |
+| **Privacy** | Fully local (Groq is opt-in) | Cloud-dependent |
+| **Footprint** | < 2% CPU at idle | — |
 
 ---
 
-## ✨ Features (v4 Milestone)
+## Features
 
-### 🎞️ Next-Gen Animation Engine
-- **WebM Integration**: Enjoy ultra-smooth movement using high-fidelity WebM video assets instead of legacy PNG sequences.
-- **Dynamic Chroma Keying**: Employs real-time, software-accelerated background removal for perfectly transparent, "floating" animations.
-- **Action Shuffling**: KIBO feels alive! An intelligent state machine triggers random, seamless animations (working out, playing, sleeping) during user idle time.
+### Voice & AI
+- **Push-to-talk** (`Ctrl+K`) with faster-whisper `base.en` + optional silero-vad endpointing
+- **Streaming sentence → TTS pipeline** — Piper neural audio starts playing while the LLM is still generating
+- **Groq cloud LLM** (`llama-3.3-70b`, ~6000 tok/s free tier) with automatic Ollama fallback if no API key is set
+- **Inline memory extraction** — the LLM emits `remember` tool calls mid-stream; no second LLM round-trip
 
-### 🧠 Smart Memory & RAG
-- **Async Fact Extraction**: KIBO automatically processes your conversations in the background to glean factual memories (preferences, names, tasks).
-- **Persistent Retrieval**: Driven by a keyword and recency-based scoring algorithm, KIBO injects hyper-relevant context into his "brain" before constructing a response.
-- **Total Privacy**: Built completely locally! The `Clear Memory` setting instantly truncates and wipes all learned facts.
+### Long-term Memory
+- **Vector RAG** via sqlite-vec + fastembed (bge-small-en-v1.5, ~30 MB). Semantic kNN — *"what's my favourite drink?"* finds *"user likes espresso"* without keyword overlap.
+- **Obsidian-compatible vault** — every fact is also written to `~/.kibo/vault/memories/*.md`
+- **One-click clear** from the Settings window
+- Migration: existing vault Markdown files are embedded on first run, no data lost
 
-### 🗓️ Ecosystem Integrations
-- **Google Calendar Sync**: Asynchronous polling surfaces upcoming Google Calendar events directly into KIBO’s proactive reminders.
-- **Autonomous Task Runner**: Executes complex, long-running AI instructions with built-in rate-limiting and user verification.
-- **Proactive Intelligence**: KIBO acts independently. He brings up low battery warnings, pauses resource-heavy tasks if CPU runs too hot, and encourages you if you've been working long hours.
+### Animation Engine
+- **VP9 alpha WebM** playback via WMF — zero CPU chroma-key on Windows 10/11 with Web Media Extensions
+- **Automatic PNG fallback** if a WebM asset lacks native alpha or the codec pack is missing
+- **State machine** — IDLE, THINKING, TALKING, ACTING, HAPPY with smooth transitions and random action animations during idle time
 
-### 🪟 Premium Desktop Experience
-- **Black Glass UI**: A minimalist, high-contrast dark theme across all windows (Chat, Settings, Context Menu) for an elite, premium look.
-- **High-Performance Streaming**: Fully asynchronous Chat UI using worker-thread dispatching — no more UI freezes during AI generation.
-- **Text & Voice Mastery**: Chat via keyboard with smooth token-by-token streaming, or use push-to-talk to speak directly to KIBO.
-- **Privacy-First (No-Logging)**: Chat history is no longer persisted on disk by default, ensuring every session is private and fresh.
-- **System Tray Management**: Lightweight global taskbar control for repositioning or adjusting settings without interrupting your workflow.
+### Clip Mode
+- **`Ctrl+Alt+K`** — saves the last 5 seconds of animation as an animated WebP to `~/.kibo/clips/`
+- Ring buffer runs passively; zero overhead when not saving
 
----
-
-## 🛠️ Architecture & Tech Stack
-KIBO guarantees complete privacy, smooth performance, and hardware-accelerated graphics support:
-- 🐍 **Language**: Python 3.11+
-- 🎨 **GUI Framework**: PySide6 (Qt for Python) with pure C++ window layering
-- 🔢 **Video Processing**: Numpy + Python Threading
-- 🎙️ **Voice AI**: `faster-whisper` & `sounddevice`
-- ☁️ **LLM Backend**: Ollama (Llama 3.2 3B is the designated optimal model) 
-- 📅 **Productivity**: Google API Client
+### System Awareness (opt-in)
+- Reacts to CPU load, idle time, and active window context
+- Google Calendar integration for meeting reminders
+- Proactive notifications (all disabled by default — enable in `config.json`)
 
 ---
 
-## 🚀 Getting Started
+## Quick start
 
-### 📋 Prerequisites
-1. **Python 3.11+** installed locally.
-2. Ensure [Ollama](https://ollama.com/) is installed and running in your background. KIBO defaults to using Llama 3 models locally. Preload your preferred model via CLI:
-   ```bash
-   ollama run llama3.2:3b
-   ```
+### 1. Install
 
-### 💻 Developer Setup
 ```bash
-# Clone the repository
 git clone https://github.com/yash-dev007/KIBO.git
 cd KIBO
-
-# Create and activate a Conda Environment
-conda create -n kibo python=3.11 -y
-conda activate kibo
-
-# Install requirements
 pip install -r requirements.txt
+```
 
-# Launch KIBO
+### 2. Get a free Groq API key
+
+Sign up at [console.groq.com](https://console.groq.com) — free tier, no credit card.
+
+```bash
+# Windows (PowerShell)
+$env:GROQ_API_KEY = "gsk_..."
+
+# macOS / Linux
+export GROQ_API_KEY="gsk_..."
+```
+
+> **No key?** KIBO falls back to Ollama automatically. Run `ollama pull llama3.2:3b` first.
+
+### 3. Download a Piper voice (~30 MB, one-time)
+
+```bash
+mkdir -p models/piper
+
+# Windows (PowerShell)
+Invoke-WebRequest -Uri "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx" -OutFile "models/piper/en_US-amy-medium.onnx"
+Invoke-WebRequest -Uri "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json" -OutFile "models/piper/en_US-amy-medium.onnx.json"
+
+# macOS / Linux
+curl -L -o models/piper/en_US-amy-medium.onnx \
+  https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx
+curl -L -o models/piper/en_US-amy-medium.onnx.json \
+  https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json
+```
+
+> **No Piper voice?** Falls back to pyttsx3. Nothing breaks.
+
+### 4. (Optional) Better endpointing
+
+```bash
+pip install torch torchaudio   # enables silero-vad end-of-speech detection
+```
+
+### 5. Run
+
+```bash
 python main.py
 ```
 
 ---
 
-## ⌨️ Global Shortcuts & Interaction
-| Action | Keybinding / Trigger |
-| :--- | :--- |
-| **Voice Hotkey** | `Ctrl + K` (Hold) |
-| **Summon Chat** | Left Click on KIBO |
-| **Tray Menu** | Right Click on KIBO |
+## Hotkeys
+
+| Hotkey | Action |
+|---|---|
+| `Ctrl+K` | Push-to-talk |
+| `Ctrl+Alt+K` | Save last 5-second clip to `~/.kibo/clips/` |
+
+Right-click the pet for Settings, Reset Position, and Quit.
 
 ---
 
-## 🤝 Contributing
-Contributions, issues, and feature requests are highly welcome! Please check the [CONTRIBUTING.md](CONTRIBUTING.md) for details on how you can help out.
+## Configuration
+
+Edit `config.json` at the project root.
+
+| Key | Default | Description |
+|---|---|---|
+| `pet_name` | `"KIBO"` | Name shown in the window title |
+| `buddy_skin` | `"skales"` | Animation asset folder under `assets/animations/` |
+| `activation_hotkey` | `"ctrl+k"` | Push-to-talk hotkey |
+| `clip_hotkey` | `"ctrl+alt+k"` | Clip save hotkey |
+| `llm_provider` | `"groq"` | `"groq"` or `"ollama"` |
+| `tts_provider` | `"piper"` | `"piper"` or `"pyttsx3"` |
+| `memory_provider` | `"vector"` | `"vector"` or `"lexical"` |
+| `proactive_enabled` | `false` | System-aware proactive notifications |
+| `calendar_provider` | `"none"` | `"google"` to enable Calendar sync |
+| `enable_speech_bubbles` | `true` | Show/hide speech bubble overlay |
 
 ---
 
-## 📝 License
-Distributed under the **MIT License**. See `LICENSE` for more information.
+## Measured performance
+
+All numbers on Ryzen 5 5600 + 16 GB RAM, Windows 11, Groq + Piper + base.en Whisper:
+
+| Metric | Result |
+|---|---|
+| Voice round-trip (hotkey → speech starts) | ~1.2 s |
+| First TTS audio chunk after LLM start | < 200 ms |
+| Memory embedding (fastembed bge-small) | ~15 ms/fact |
+| CPU at idle (animations running) | < 2% |
+| Peak RAM | ~380 MB (models loaded) |
 
 ---
 
-<div align="center">
-  <p>✨ Developed with 💚 by <a href="https://github.com/yash-dev007">yash-dev007</a> ✨</p>
-  <p><strong>Experience the future of desktop companionship.</strong></p>
-</div>
+## Architecture
+
+```
+src/
+├── ai/
+│   ├── llm_providers/       # Groq (default) + Ollama fallback
+│   ├── tts_providers/       # Piper neural (default) + pyttsx3 fallback
+│   ├── memory_providers/    # Vector sqlite-vec (default) + lexical fallback
+│   ├── ai_client.py         # Streaming LLM + inline memory tool calls
+│   ├── brain.py             # Pet state machine
+│   ├── sentence_buffer.py   # Token stream → sentences → TTS
+│   ├── tts_manager.py       # TTS queue + streaming
+│   └── voice_listener.py    # Whisper STT + silero-vad
+├── ui/
+│   ├── animation_engine.py  # VP9 alpha WebM player + PNG fallback
+│   ├── clip_recorder.py     # 5-second ring buffer → animated WebP
+│   ├── ui_manager.py        # Transparent frameless window + speech bubble
+│   ├── chat_window.py       # Streaming chat UI
+│   └── settings_window.py
+├── system/
+│   ├── hotkey_listener.py   # Global hotkeys on a QThread
+│   ├── system_monitor.py    # CPU / idle sensors
+│   ├── proactive_engine.py  # Opt-in proactive notifications
+│   └── calendar_manager.py  # Google Calendar (opt-in)
+└── core/
+    └── config_manager.py
+scripts/
+└── preprocess_alpha.py      # One-time WebM → VP9 alpha batch converter
+```
+
+### Provider abstraction
+
+Every external dependency is behind a two-level abstraction — default provider with graceful fallback:
+
+```
+LLM:    Groq  ──fallback──▶  Ollama
+TTS:    Piper ──fallback──▶  pyttsx3
+Memory: sqlite-vec ─────────▶  lexical keyword
+```
+
+No API key, no voice model, no GPU? Each layer degrades independently. The app always starts.
+
+---
+
+## Asset preprocessing
+
+The animation engine expects WebM files with native VP9 alpha (`yuva420p`). If you add custom character animations with a green-screen background, run the one-time converter:
+
+```bash
+# Requires ffmpeg on PATH — https://ffmpeg.org/download.html
+python scripts/preprocess_alpha.py
+```
+
+This bakes transparency into the files offline. Runtime CPU cost: zero.
+
+---
+
+## Running tests
+
+```bash
+pytest tests/ -q
+```
+
+77 tests across the AI client, sentence buffer, memory providers, and voice pipeline.
+
+---
+
+## Roadmap
+
+- [ ] macOS support (`pynput` + `pywinctl` to replace Windows-only deps)
+- [ ] Custom character SDK — drop in your own WebM sprite sheet
+- [ ] `pip install kibo` PyPI release
+- [ ] PostHog opt-in telemetry for clip sharing analytics
+
+---
+
+## Contributing
+
+Issues and PRs are welcome. Please open an issue first for anything larger than a bug fix.
+
+1. Fork → create a feature branch
+2. Write tests for new behaviour
+3. `pytest tests/ -q` must pass
+4. Submit PR with a clear description of what changed and why
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Yash Patil

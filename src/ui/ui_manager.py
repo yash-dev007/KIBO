@@ -213,6 +213,7 @@ class UIManager(QWidget):
     animation_finished = Signal()
     pet_clicked = Signal()
     show_settings = Signal()
+    frame_captured = Signal(QPixmap)  # forwarded for ClipRecorder
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -343,6 +344,7 @@ class UIManager(QWidget):
 
     def _on_frame(self, pixmap: QPixmap) -> None:
         self._sprite.setPixmap(pixmap)
+        self.frame_captured.emit(pixmap)
 
     def _on_anim_finished(self) -> None:
         """Called when a one-shot animation completes."""
@@ -463,6 +465,20 @@ class UIManager(QWidget):
     def show_about(self) -> None:
         """Public slot — opens the About dialog."""
         self._show_about_dialog()
+
+    @Slot(str)
+    def show_clip_toast(self, path: str) -> None:
+        """Public slot — shows a brief 'Clip saved!' notification."""
+        import os
+        os.startfile(os.path.dirname(path))
+        self._bubble.show_text(f"Clip saved! {Path(path).name}")
+        self._position_bubble()
+
+    @Slot(str)
+    def show_clip_error(self, message: str) -> None:
+        """Public slot — shows a clip encoding error in the speech bubble."""
+        self._bubble.show_text(f"Clip error: {message}")
+        self._position_bubble()
 
     def _reset_position(self) -> None:
         screen = QApplication.primaryScreen().geometry()

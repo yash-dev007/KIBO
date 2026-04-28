@@ -123,6 +123,13 @@ def main() -> int:
     tts_thread = None
     task_runner = None
 
+    # Clip recorder runs regardless of AI mode (records animation frames)
+    from src.ui.clip_recorder import ClipRecorder
+    clip_recorder = ClipRecorder()
+    ui.frame_captured.connect(clip_recorder.on_frame)
+    clip_recorder.clip_saved.connect(ui.show_clip_toast)
+    clip_recorder.clip_error.connect(ui.show_clip_error)
+
     if ai_enabled:
         from src.ai.ai_client import AIThread
         from src.system.hotkey_listener import HotkeyThread
@@ -187,6 +194,9 @@ def main() -> int:
         hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
         hotkey_thread.hotkey_pressed.connect(voice_thread.on_hotkey_pressed)
         hotkey_thread.hotkey_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
+
+        # Clip hotkey → ClipRecorder
+        hotkey_thread.clip_hotkey_pressed.connect(clip_recorder.dump)
 
         # Voice thread states -> UI
         voice_thread.recording_started.connect(chat_window.show_listening_indicator)
