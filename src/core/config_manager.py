@@ -108,6 +108,8 @@ DEFAULT_CONFIG: dict = {
     "calendar_provider": "none",
     "calendar_lookahead_minutes": 60,
     "clip_hotkey": "ctrl+alt+k",
+    "personality_version": "1.0",
+    "safety_version": "1.0",
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
