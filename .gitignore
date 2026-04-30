@@ -39,3 +39,6 @@ REF_PROJECT/
 
 # Worktrees
 .worktrees/
+
+# Git worktrees
+.worktrees/

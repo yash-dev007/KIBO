@@ -39,7 +39,7 @@
     "stt_vad_threshold": 0.5,
     "stt_min_silence_ms": 600,
     "opaque_fallback": false,
-    "buddy_skin": "capy",
+    "buddy_skin": "bubbles",
     "idle_action_interval_min_s": 30,
     "idle_action_interval_max_s": 60,
     "memory_enabled": true,
