@@ -19,9 +19,10 @@ from typing import Optional
 
 from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QThread, Qt, Signal, Slot
 
-from src.ai.llm_providers import ChatChunk, LLMProvider, get_provider
+from src.ai.llm_providers import LLMProvider, get_provider
 from src.ai.llm_providers.base import REMEMBER_TOOL_SCHEMA
 from src.ai.memory_store import MemoryStore
+from src.ai.prompt_builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,7 @@ class AIClient(QObject):
         self._config = config
         self._memory_store = memory_store
         self._history: list[dict] = []
-        self._system_prompt = config.get(
-            "system_prompt",
-            "You are KIBO, a helpful desktop assistant.",
-        )
+        self._prompt_builder = PromptBuilder(config)
         self._history_limit = int(config.get("conversation_history_limit", 10))
         self._cancel_event = threading.Event()
 
@@ -74,10 +72,7 @@ class AIClient(QObject):
     @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:
         self._config = new_config
-        self._system_prompt = new_config.get(
-            "system_prompt",
-            "You are KIBO, a helpful desktop assistant.",
-        )
+        self._prompt_builder = PromptBuilder(new_config)
         self._history_limit = int(new_config.get("conversation_history_limit", 10))
         self._inline_memory = bool(new_config.get("memory_extraction_inline", True))
         
@@ -97,8 +92,8 @@ class AIClient(QObject):
         if self._provider is None:
             try:
                 self._provider = get_provider(self._config)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Provider retry failed: %s", exc)
                 
         if self._provider is None:
             self.error_occurred.emit(
@@ -110,14 +105,15 @@ class AIClient(QObject):
         self._history.append({"role": "user", "content": user_text})
         self._trim_history()
 
-        memory_context = (
+        raw_memory_context = (
             self._memory_store.build_memory_prompt(user_text)
             if self._memory_store
             else ""
         )
-        system = self._system_prompt
-        if memory_context:
-            system += "\n\nWhat you remember:\n" + memory_context
+        memory_lines = (
+            [raw_memory_context] if raw_memory_context else None
+        )
+        system = self._prompt_builder.build_system_prompt(memories=memory_lines)
 
         tools = (
             [REMEMBER_TOOL_SCHEMA]
@@ -287,7 +283,7 @@ def _extract_memory_args(data: object) -> tuple[Optional[dict], bool]:
 
     name = str(data.get("name") or data.get("tool") or data.get("function") or "").lower()
     is_remember = name == "remember"
-    if "parameters" in data or "arguments" in data:
+    if is_remember and ("parameters" in data or "arguments" in data):
         args = data.get("parameters") or data.get("arguments") or {}
         return (args if isinstance(args, dict) else None), True
     if is_remember:
