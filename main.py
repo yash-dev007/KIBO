@@ -63,6 +63,13 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
 
     config = load_config()  # path resolved via get_app_root() in config_manager
+
+    if not config.get("first_run_completed", False):
+        from src.ui.onboarding_window import OnboardingWindow
+        onboarding = OnboardingWindow(dict(config))
+        onboarding.exec()
+        config = load_config()
+
     ai_enabled = config.get("ai_enabled", True)
 
     logger.info("KIBO starting. Pet name: %s | AI: %s | Skin: %s",

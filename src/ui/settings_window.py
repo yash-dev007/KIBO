@@ -1,5 +1,8 @@
 import json
 import logging
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -11,7 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect, QMessageBox
 )
 
-from src.core.config_manager import get_app_root
+from src.core.config_manager import get_app_root, get_user_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,7 @@ class SettingsWindow(QWidget):
         self._init_ai_tab()
         self._init_notifications_tab()
         self._init_appearance_tab()
+        self._init_data_tab()
 
         layout.addWidget(header)
         layout.addWidget(self.tabs)
@@ -268,6 +272,75 @@ class SettingsWindow(QWidget):
         layout.addRow("", self.f_opaque)
 
         self.tabs.addTab(tab, "Appearance")
+
+    def _init_data_tab(self) -> None:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        data_dir = get_user_data_dir()
+        path_label = QLabel(f"Data location: {data_dir}")
+        path_label.setWordWrap(True)
+        path_label.setStyleSheet("color: #888899; font-size: 12px;")
+        layout.addWidget(path_label)
+
+        btn_open_folder = QPushButton("Open Data Folder")
+        btn_open_folder.setCursor(Qt.PointingHandCursor)
+        btn_open_folder.clicked.connect(lambda: self._open_data_folder(data_dir))
+        layout.addWidget(btn_open_folder)
+
+        btn_reset_onboarding = QPushButton("Reset Onboarding")
+        btn_reset_onboarding.setCursor(Qt.PointingHandCursor)
+        btn_reset_onboarding.setStyleSheet("""
+            QPushButton {
+                background: rgba(100, 80, 20, 100);
+                border: 1px solid rgba(160, 130, 30, 100);
+                border-radius: 4px;
+                color: white;
+                padding: 4px 8px;
+            }
+            QPushButton:hover { background: rgba(140, 110, 20, 150); }
+        """)
+        btn_reset_onboarding.clicked.connect(self._on_reset_onboarding)
+        layout.addWidget(btn_reset_onboarding)
+
+        layout.addStretch()
+        self.tabs.addTab(tab, "Data")
+
+    def _open_data_folder(self, path: Path) -> None:
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+        except Exception as exc:
+            logger.error("Could not open data folder: %s", exc)
+            QMessageBox.warning(self, "Error", f"Could not open folder:\n{exc}")
+
+    def _on_reset_onboarding(self) -> None:
+        reply = QMessageBox.question(
+            self, "Reset Onboarding",
+            "This will show the first-run setup wizard on next launch. Continue?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            config_path = get_app_root() / "config.json"
+            data: dict = {}
+            if config_path.exists():
+                with config_path.open("r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            data["first_run_completed"] = False
+            with config_path.open("w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            QMessageBox.information(self, "Done", "Onboarding will run on next launch.")
+        except Exception as exc:
+            logger.error("Failed to reset onboarding: %s", exc)
+            QMessageBox.critical(self, "Error", f"Failed to reset onboarding:\n{exc}")
 
     def _populate_fields(self) -> None:
         cfg = self._current_config

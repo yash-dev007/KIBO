@@ -22,6 +22,7 @@ class HotkeyListener(QObject):
 
     hotkey_pressed = Signal()
     clip_hotkey_pressed = Signal()
+    registration_failed = Signal(str)  # emitted with the failed hotkey string
 
     def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -39,9 +40,14 @@ class HotkeyListener(QObject):
         )
         try:
             keyboard.add_hotkey(self._hotkey, self._on_hotkey)
+        except Exception as exc:
+            logger.error("HotkeyListener: failed to register '%s': %s", self._hotkey, exc)
+            self.registration_failed.emit(self._hotkey)
+        try:
             keyboard.add_hotkey(self._clip_hotkey, self._on_clip_hotkey)
         except Exception as exc:
-            logger.error("HotkeyListener error: %s", exc)
+            logger.error("HotkeyListener: failed to register '%s': %s", self._clip_hotkey, exc)
+            self.registration_failed.emit(self._clip_hotkey)
 
     def stop(self) -> None:
         self._running = False
@@ -66,6 +72,7 @@ class HotkeyThread(QThread):
 
     hotkey_pressed = Signal()
     clip_hotkey_pressed = Signal()
+    registration_failed = Signal(str)
 
     def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -73,6 +80,7 @@ class HotkeyThread(QThread):
         self._listener.moveToThread(self)
         self._listener.hotkey_pressed.connect(self.hotkey_pressed)
         self._listener.clip_hotkey_pressed.connect(self.clip_hotkey_pressed)
+        self._listener.registration_failed.connect(self.registration_failed)
 
     def run(self) -> None:
         self._listener.start_listening()
