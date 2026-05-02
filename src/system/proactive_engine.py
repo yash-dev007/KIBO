@@ -21,6 +21,8 @@ class ProactiveContext:
     next_meeting_minutes: int
     unread_emails: int
     battery_percent: Optional[float]
+    cpu_percent: Optional[float]
+    app_open_minutes: int
 
 
 @dataclass(frozen=True)
@@ -29,53 +31,44 @@ class ProactiveRule:
     condition: Callable[[ProactiveContext], bool]
     message: Callable[[ProactiveContext], str]
     priority: str
-    enabled_phase: int
 
 
-RULES = [
+RULES: list[ProactiveRule] = [
+    ProactiveRule(
+        type="morning-greeting",
+        condition=lambda ctx: 8 <= ctx.current_hour < 12 and ctx.app_open_minutes >= 2,
+        message=lambda _: "Good morning! Ready to get things done?",
+        priority="low",
+    ),
+    ProactiveRule(
+        type="idle-checkin",
+        condition=lambda ctx: ctx.idle_minutes >= 60,
+        message=lambda ctx: f"You've been away for {ctx.idle_minutes} minutes. Still there?",
+        priority="low",
+    ),
+    ProactiveRule(
+        type="eod-summary",
+        condition=lambda ctx: 17 <= ctx.current_hour < 20 and ctx.tasks_done_today >= 1,
+        message=lambda ctx: f"Nice work today — {ctx.tasks_done_today} task(s) done!",
+        priority="low",
+    ),
+    ProactiveRule(
+        type="battery-low",
+        condition=lambda ctx: ctx.battery_percent is not None and ctx.battery_percent < 20,
+        message=lambda ctx: f"Battery at {ctx.battery_percent:.0f}% — might want to plug in.",
+        priority="medium",
+    ),
+    ProactiveRule(
+        type="cpu-panic",
+        condition=lambda ctx: ctx.cpu_percent is not None and ctx.cpu_percent > 90,
+        message=lambda _: "CPU is spiking — something's working hard.",
+        priority="medium",
+    ),
     ProactiveRule(
         type="meeting-reminder",
         condition=lambda ctx: 0 < ctx.next_meeting_minutes <= 30,
         message=lambda ctx: f"Meeting in {ctx.next_meeting_minutes} min!",
         priority="high",
-        enabled_phase=3,
-    ),
-    ProactiveRule(
-        type="battery-low",
-        condition=lambda ctx: ctx.battery_percent is not None and ctx.battery_percent < 20,
-        message=lambda _: "Running low on battery...",
-        priority="medium",
-        enabled_phase=1,
-    ),
-    ProactiveRule(
-        type="task-blocked",
-        condition=lambda ctx: ctx.tasks_blocked > 0,
-        message=lambda ctx: f"{ctx.tasks_blocked} task(s) are blocked.",
-        priority="medium",
-        enabled_phase=2,
-    ),
-    ProactiveRule(
-        type="morning-greeting",
-        condition=lambda ctx: 7 <= ctx.current_hour < 9,
-        message=lambda _: "Good morning! Ready to get things done?",
-        priority="low",
-        enabled_phase=1,
-    ),
-    ProactiveRule(
-        type="idle-checkin",
-        condition=lambda ctx: ctx.idle_minutes > 45 and ctx.tasks_pending > 0,
-        message=lambda ctx: (
-            f"You've been idle {ctx.idle_minutes} min. {ctx.tasks_pending} task(s) waiting."
-        ),
-        priority="low",
-        enabled_phase=2,
-    ),
-    ProactiveRule(
-        type="eod-summary",
-        condition=lambda ctx: 16 <= ctx.current_hour < 19 and ctx.tasks_done_today >= 3,
-        message=lambda ctx: f"Great work! {ctx.tasks_done_today} tasks done today.",
-        priority="low",
-        enabled_phase=2,
     ),
 ]
 
@@ -83,32 +76,35 @@ RULES = [
 class ProactiveEngine(QObject):
     proactive_notification = Signal(str, str, str)
 
-    def __init__(self, config: dict, router: NotificationRouter, task_runner=None) -> None:
+    def __init__(
+        self,
+        config: dict,
+        router: NotificationRouter,
+        task_runner=None,
+        clock_fn: Optional[Callable[[], datetime.datetime]] = None,
+    ) -> None:
         super().__init__()
         self._config = config
         self._router = router
+        self._clock_fn: Callable[[], datetime.datetime] = clock_fn or datetime.datetime.now
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
+
         self._battery_percent: Optional[float] = None
+        self._cpu_percent: Optional[float] = None
         self._next_meeting_minutes = -1
         self._unread_emails = -1
-        self._phase = self._compute_phase(config)
+        self._start_time: datetime.datetime = self._clock_fn()
 
         self._tasks_pending = 0
         self._tasks_blocked = 0
         self._tasks_done_today = 0
         self._last_tick_date: Optional[datetime.date] = None
+
         if task_runner is not None:
             self._sync_task_state(task_runner)
 
-    @staticmethod
-    def _compute_phase(config: dict) -> int:
-        if not config.get("proactive_enabled", True):
-            return 1
-        return 3 if config.get("calendar_provider", "none") != "none" else 2
-
     def _sync_task_state(self, task_runner) -> None:
-        """Load task counters from persistent storage on startup."""
         today = datetime.date.today()
         today_start = int(datetime.datetime(today.year, today.month, today.day).timestamp())
         tasks = task_runner.get_tasks()
@@ -121,7 +117,7 @@ class ProactiveEngine(QObject):
         )
 
     def start(self) -> None:
-        self._timer.start(60000)
+        self._timer.start(60_000)
 
     def stop(self) -> None:
         self._timer.stop()
@@ -132,22 +128,20 @@ class ProactiveEngine(QObject):
     @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:
         self._config = new_config
-        self._phase = self._compute_phase(new_config)
 
     @Slot(SensorData)
     def on_sensor_update(self, data: SensorData) -> None:
         self._battery_percent = data.battery_percent
+        self._cpu_percent = getattr(data, "cpu_percent", None)
 
     @Slot(list)
     def on_calendar_updated(self, events: list[dict]) -> None:
         if not events:
             self._next_meeting_minutes = -1
             return
-
-        now = datetime.datetime.now()
-        next_event = events[0]
+        now = self._clock_fn()
         try:
-            start = datetime.datetime.fromisoformat(next_event.get("start_time", ""))
+            start = datetime.datetime.fromisoformat(events[0].get("start_time", ""))
             diff = (start - now).total_seconds() / 60.0
             self._next_meeting_minutes = int(diff) if diff > 0 else -1
         except Exception:
@@ -167,28 +161,32 @@ class ProactiveEngine(QObject):
         if not self._config.get("proactive_enabled", True):
             return
 
-        today = datetime.date.today()
+        now = self._clock_fn()
+        today = now.date()
         if self._last_tick_date is not None and today != self._last_tick_date:
             logger.info("Day rollover detected; resetting daily task counter.")
             self._tasks_done_today = 0
         self._last_tick_date = today
 
-        now = int(datetime.datetime.now().timestamp())
         last_interaction = self._router.get_last_interaction()
-        idle_mins = (now - last_interaction) // 60 if last_interaction > 0 else 0
+        now_ts = int(now.timestamp())
+        idle_mins = (now_ts - last_interaction) // 60 if last_interaction > 0 else 0
+        app_open_mins = int((now - self._start_time).total_seconds() / 60)
 
         ctx = ProactiveContext(
             idle_minutes=idle_mins,
-            current_hour=datetime.datetime.now().hour,
+            current_hour=now.hour,
             tasks_pending=self._tasks_pending,
             tasks_blocked=self._tasks_blocked,
             tasks_done_today=self._tasks_done_today,
             next_meeting_minutes=self._next_meeting_minutes,
             unread_emails=self._unread_emails,
             battery_percent=self._battery_percent,
+            cpu_percent=self._cpu_percent,
+            app_open_minutes=app_open_mins,
         )
 
         for rule in RULES:
-            if rule.enabled_phase <= self._phase and rule.condition(ctx):
+            if rule.condition(ctx):
                 self.proactive_notification.emit(rule.type, rule.message(ctx), rule.priority)
                 break
