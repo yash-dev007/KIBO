@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="assets/animations/skales/icon.png" alt="KIBO" width="120" />
+<img src="assets/animations/bubbles/icon.png" alt="KIBO" width="250" />
 
 # KIBO
 
