@@ -395,7 +395,7 @@ This bakes transparency offline. Runtime CPU cost: zero.
 
 ### In progress / up next
 
-- [ ] **Phase 2** — Memory Transparency UI: inspect, search, edit, and delete individual facts from inside KIBO
+- [x] **Phase 2** — Memory Transparency UI: inspect, search, edit, and delete individual facts from inside KIBO
 - [ ] **Phase 3** — Personality and Memory Coherence: stronger recall, consistent character voice across sessions
 - [ ] **Phase 4** — Settings, Controls, and Error Surfaces: Open Data Folder, Reset Onboarding, hotkey conflict detection
 - [ ] **Phase 4.5** — Voice, Hotkey, and Device Reliability: audio device fallback, hotkey health signal
