@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -11,7 +12,9 @@ from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QP
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTabWidget, QFormLayout, QCheckBox, QComboBox, QSpinBox, QSlider, QPlainTextEdit,
-    QGraphicsDropShadowEffect, QMessageBox
+    QGraphicsDropShadowEffect, QMessageBox, QTableWidget, QTableWidgetItem,
+    QHeaderView, QScrollArea, QDialog, QDialogButtonBox, QAbstractItemView,
+    QSizePolicy,
 )
 
 from src.core.config_manager import get_app_root, get_user_data_dir
@@ -36,13 +39,14 @@ class SettingsWindow(QWidget):
         )
         return skins if skins else ["skales"]
 
-    def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, config: dict, parent: Optional[QWidget] = None, memory_store=None) -> None:
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(480, 600)
+        self.setFixedSize(520, 640)
         self._original_config = config
         self._current_config = dict(config)
         self._drag_pos: Optional[QPoint] = None
+        self._memory_store = memory_store
 
         self._init_ui()
         self._populate_fields()
@@ -125,7 +129,9 @@ class SettingsWindow(QWidget):
         self._init_ai_tab()
         self._init_notifications_tab()
         self._init_appearance_tab()
+        self._init_memory_tab()
         self._init_data_tab()
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(header)
         layout.addWidget(self.tabs)
@@ -272,6 +278,208 @@ class SettingsWindow(QWidget):
         layout.addRow("", self.f_opaque)
 
         self.tabs.addTab(tab, "Appearance")
+
+    def _init_memory_tab(self) -> None:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # Search bar
+        search_row = QHBoxLayout()
+        self._mem_search = QLineEdit()
+        self._mem_search.setPlaceholderText("Search memories...")
+        self._mem_search.textChanged.connect(self._filter_memory_table)
+        search_row.addWidget(self._mem_search)
+        layout.addLayout(search_row)
+
+        # Table
+        self._mem_table = QTableWidget(0, 3)
+        self._mem_table.setHorizontalHeaderLabels(["Category", "Content", "Date"])
+        self._mem_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._mem_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self._mem_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self._mem_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._mem_table.verticalHeader().setVisible(False)
+        self._mem_table.setStyleSheet("""
+            QTableWidget { gridline-color: rgba(60,60,60,100); }
+            QTableWidget::item { padding: 4px; }
+            QHeaderView::section {
+                background: rgba(30,30,30,200);
+                color: #aaaaaa;
+                padding: 4px;
+                border: none;
+                font-size: 11px;
+            }
+        """)
+        layout.addWidget(self._mem_table)
+
+        # Empty state label
+        self._mem_empty = QLabel("No memories yet.")
+        self._mem_empty.setAlignment(Qt.AlignCenter)
+        self._mem_empty.setStyleSheet("color: #666; font-size: 13px;")
+        self._mem_empty.hide()
+        layout.addWidget(self._mem_empty)
+
+        # Action buttons row
+        btn_row = QHBoxLayout()
+
+        btn_edit = QPushButton("Edit Selected")
+        btn_edit.setCursor(Qt.PointingHandCursor)
+        btn_edit.setStyleSheet(self._action_btn_style())
+        btn_edit.clicked.connect(self._on_edit_memory)
+
+        btn_delete = QPushButton("Delete Selected")
+        btn_delete.setCursor(Qt.PointingHandCursor)
+        btn_delete.setStyleSheet(self._destructive_btn_style())
+        btn_delete.clicked.connect(self._on_delete_memory)
+
+        btn_vault = QPushButton("Open Vault")
+        btn_vault.setCursor(Qt.PointingHandCursor)
+        btn_vault.setStyleSheet(self._action_btn_style())
+        btn_vault.clicked.connect(self._on_open_vault)
+
+        btn_rebuild = QPushButton("Rebuild Index")
+        btn_rebuild.setCursor(Qt.PointingHandCursor)
+        btn_rebuild.setStyleSheet(self._action_btn_style())
+        btn_rebuild.clicked.connect(self._on_rebuild_index)
+
+        btn_row.addWidget(btn_edit)
+        btn_row.addWidget(btn_delete)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_vault)
+        btn_row.addWidget(btn_rebuild)
+        layout.addLayout(btn_row)
+
+        self.tabs.addTab(tab, "Memory")
+        self._mem_tab_index = self.tabs.count() - 1
+
+    def _action_btn_style(self) -> str:
+        return """
+            QPushButton {
+                background: rgba(50,50,50,150);
+                border: 1px solid rgba(90,90,90,100);
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 4px 8px;
+            }
+            QPushButton:hover { background: rgba(80,80,80,200); }
+        """
+
+    def _destructive_btn_style(self) -> str:
+        return """
+            QPushButton {
+                background: rgba(150,40,40,100);
+                border: 1px solid rgba(200,50,50,100);
+                border-radius: 4px;
+                color: white;
+                padding: 4px 8px;
+            }
+            QPushButton:hover { background: rgba(200,50,50,150); }
+        """
+
+    def _on_tab_changed(self, index: int) -> None:
+        if hasattr(self, "_mem_tab_index") and index == self._mem_tab_index:
+            self._refresh_memory_table()
+
+    def _refresh_memory_table(self) -> None:
+        if self._memory_store is None:
+            self._mem_table.setRowCount(0)
+            self._mem_empty.setText("Memory store not available.")
+            self._mem_empty.show()
+            return
+
+        facts = self._memory_store.list_facts()
+        self._mem_table.setRowCount(0)
+
+        query = self._mem_search.text().lower().strip()
+        visible = [
+            f for f in facts
+            if not query or query in f.get("content", "").lower() or query in f.get("category", "").lower()
+        ]
+
+        if not visible:
+            self._mem_empty.show()
+        else:
+            self._mem_empty.hide()
+
+        for row, fact in enumerate(visible):
+            self._mem_table.insertRow(row)
+            cat_item = QTableWidgetItem(fact.get("category", ""))
+            cat_item.setData(Qt.UserRole, fact.get("id", ""))
+            content_preview = fact.get("content", "")[:80]
+            content_item = QTableWidgetItem(content_preview)
+            ts = fact.get("extracted_at", 0)
+            if ts:
+                date_str = datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            else:
+                date_str = fact.get("source_session", "")
+            date_item = QTableWidgetItem(date_str)
+            self._mem_table.setItem(row, 0, cat_item)
+            self._mem_table.setItem(row, 1, content_item)
+            self._mem_table.setItem(row, 2, date_item)
+
+    def _filter_memory_table(self, _text: str) -> None:
+        self._refresh_memory_table()
+
+    def _selected_fact_id(self) -> Optional[str]:
+        row = self._mem_table.currentRow()
+        if row < 0:
+            return None
+        item = self._mem_table.item(row, 0)
+        return item.data(Qt.UserRole) if item else None
+
+    def _on_edit_memory(self) -> None:
+        if self._memory_store is None:
+            return
+        fact_id = self._selected_fact_id()
+        if fact_id is None:
+            QMessageBox.information(self, "No selection", "Select a memory row to edit.")
+            return
+
+        facts = self._memory_store.list_facts()
+        fact = next((f for f in facts if str(f.get("id", "")) == fact_id), None)
+        if fact is None:
+            QMessageBox.warning(self, "Not found", "Memory not found.")
+            self._refresh_memory_table()
+            return
+
+        dlg = _MemoryEditDialog(fact, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        changes = dlg.get_changes()
+        ok = self._memory_store.update_fact(fact_id, changes)
+        if not ok:
+            QMessageBox.warning(self, "Error", "Failed to update memory.")
+        self._refresh_memory_table()
+
+    def _on_delete_memory(self) -> None:
+        if self._memory_store is None:
+            return
+        fact_id = self._selected_fact_id()
+        if fact_id is None:
+            QMessageBox.information(self, "No selection", "Select a memory row to delete.")
+            return
+
+        ok = self._memory_store.delete_fact(fact_id)
+        if not ok:
+            QMessageBox.warning(self, "Not found", "Memory could not be deleted.")
+        self._refresh_memory_table()
+
+    def _on_open_vault(self) -> None:
+        if self._memory_store is None:
+            return
+        vault_path = self._memory_store.get_vault_path()
+        self._open_data_folder(vault_path)
+
+    def _on_rebuild_index(self) -> None:
+        if self._memory_store is None:
+            return
+        self._memory_store.rebuild_index()
+        QMessageBox.information(self, "Done", "Memory index rebuilt from vault.")
+        self._refresh_memory_table()
 
     def _init_data_tab(self) -> None:
         tab = QWidget()
@@ -456,3 +664,56 @@ class SettingsWindow(QWidget):
     def hideEvent(self, event) -> None:
         self.closed.emit()
         super().hideEvent(event)
+
+
+class _MemoryEditDialog(QDialog):
+    """Small dialog for editing a single memory fact."""
+
+    _CATEGORIES = ["preference", "fact", "person", "location", "task"]
+
+    def __init__(self, fact: dict, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit Memory")
+        self.setMinimumWidth(420)
+        self._fact = fact
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        form = QFormLayout()
+
+        self._content_edit = QPlainTextEdit()
+        self._content_edit.setPlainText(self._fact.get("content", ""))
+        self._content_edit.setFixedHeight(80)
+        form.addRow("Content:", self._content_edit)
+
+        self._category_combo = QComboBox()
+        self._category_combo.addItems(self._CATEGORIES)
+        current_cat = self._fact.get("category", "fact")
+        if current_cat not in self._CATEGORIES:
+            self._category_combo.addItem(current_cat)
+        self._category_combo.setCurrentText(current_cat)
+        form.addRow("Category:", self._category_combo)
+
+        self._keywords_edit = QLineEdit()
+        kw = self._fact.get("keywords", [])
+        self._keywords_edit.setText(", ".join(kw) if isinstance(kw, list) else str(kw))
+        self._keywords_edit.setPlaceholderText("comma-separated keywords")
+        form.addRow("Keywords:", self._keywords_edit)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_changes(self) -> dict:
+        raw_kw = [k.strip() for k in self._keywords_edit.text().split(",") if k.strip()]
+        return {
+            "content": self._content_edit.toPlainText().strip(),
+            "category": self._category_combo.currentText(),
+            "keywords": raw_kw,
+        }

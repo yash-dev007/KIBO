@@ -176,6 +176,101 @@ class MemoryStore(QObject):
         self._rebuild_dashboard()
         self.facts_updated.emit()
 
+    def list_facts(self) -> List[dict]:
+        """Return all stored facts as a list of dicts with at least: id, content, category, keywords, extracted_at."""
+        with self._lock:
+            return list(self._load_all())
+
+    def get_vault_path(self) -> Path:
+        """Return the Obsidian vault root directory."""
+        return self._vault_dir
+
+    def delete_fact(self, fact_id: str) -> bool:
+        """Delete a single fact by id from disk and provider index.
+
+        Returns True if the fact was found and deleted, False if not found.
+        """
+        with self._lock:
+            matches = list(self._memory_dir.glob(f"*{fact_id}*.md"))
+            if not matches:
+                return False
+            for p in matches:
+                try:
+                    p.unlink()
+                except Exception as e:
+                    logger.error("Failed to delete memory file %s: %s", p.name, e)
+            self._cache.clear()
+
+        self._provider.delete([fact_id])
+        self._rebuild_dashboard()
+        self.facts_updated.emit()
+        return True
+
+    def update_fact(self, fact_id: str, changes: dict) -> bool:
+        """Update a fact's content, category, and/or keywords on disk and in the provider index.
+
+        Returns True if the fact was found and updated, False if not found.
+        """
+        with self._lock:
+            matches = list(self._memory_dir.glob(f"*{fact_id}*.md"))
+            if not matches:
+                return False
+
+            file_path = matches[0]
+            try:
+                text = file_path.read_text("utf-8")
+            except Exception as e:
+                logger.error("Failed to read memory %s: %s", file_path.name, e)
+                return False
+
+            meta, body = _parse_frontmatter(text)
+            if "id" not in meta:
+                return False
+
+            new_content = changes.get("content", body)
+            new_category = changes.get("category", meta.get("category", "fact"))
+            raw_kw = changes.get("keywords", meta.get("keywords", []))
+            new_keywords = [str(k).lower() for k in raw_kw]
+
+            meta["category"] = new_category
+            meta["keywords"] = new_keywords
+
+            updated_text = f"{_build_frontmatter(meta)}\n\n{new_content}\n"
+            try:
+                file_path.write_text(updated_text, "utf-8")
+            except Exception as e:
+                logger.error("Failed to write updated memory %s: %s", file_path.name, e)
+                return False
+
+            self._cache.clear()
+
+        # Re-index: delete old entry then store updated fact
+        self._provider.delete([fact_id])
+        self._provider.store(
+            fact_id=fact_id,
+            content=new_content,
+            category=new_category,
+            keywords=new_keywords,
+            extracted_at=int(meta.get("extracted_at", 0)),
+        )
+        self._rebuild_dashboard()
+        self.facts_updated.emit()
+        return True
+
+    def rebuild_index(self) -> None:
+        """Wipe the provider index and repopulate it from Markdown files on disk."""
+        self._provider.clear()
+        with self._lock:
+            self._cache.clear()
+            self._migration_done.clear()
+            facts = self._load_all()
+            if facts:
+                for f in facts:
+                    if "id" in f:
+                        f["id"] = str(f["id"])
+                self._provider.migrate(facts)
+            self._migration_done.set()
+
     # ── Loading ─────────────────────────────────────────────────────────
 
     def _load_all(self) -> List[dict]:

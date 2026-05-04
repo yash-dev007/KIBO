@@ -25,10 +25,10 @@ def check_ollama(host: str = "http://localhost:11434") -> dict:
 
     Sends a short-timeout GET to /api/tags — no user content is transmitted.
     """
-    import requests  # optional dep; guarded by try/except
-
     url = f"{host.rstrip('/')}/api/tags"
     try:
+        import requests  # optional dep; guarded by try/except
+
         response = requests.get(url, timeout=2)
         if response.status_code == 200:
             return {"available": True, "reason": "Ollama responded"}

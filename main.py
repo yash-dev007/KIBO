@@ -86,7 +86,7 @@ def main() -> int:
     tray = TrayManager(config, app)
     chat_window = ChatWindow(config)
     memory_store = MemoryStore(config)
-    settings_window = SettingsWindow(config)
+    settings_window = SettingsWindow(config, memory_store=memory_store)
     calendar_manager = CalendarManager(config)
 
     # ── Core Wiring ───────────────────────────────────────────────────
