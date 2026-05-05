@@ -82,8 +82,9 @@ class TTSManager(QObject):
         with self._streaming_lock:
             self._chunk_queue.put(sentence)
             if self._streaming_thread is None or not self._streaming_thread.is_alive():
+                queue_ref = self._chunk_queue
                 self._streaming_thread = threading.Thread(
-                    target=self._drain_chunks, daemon=True
+                    target=self._drain_chunks, args=(queue_ref,), daemon=True
                 )
                 self._streaming_thread.start()
 
@@ -96,10 +97,10 @@ class TTSManager(QObject):
             else:
                 self.speech_done.emit()
 
-    def _drain_chunks(self) -> None:
+    def _drain_chunks(self, chunk_queue: "queue.Queue[Optional[str]]") -> None:
         try:
             while True:
-                chunk = self._chunk_queue.get()
+                chunk = chunk_queue.get()
                 if chunk is None:
                     break
                 if self._silent_mode:
@@ -119,11 +120,33 @@ class TTSManager(QObject):
     @Slot(bool)
     def set_silent_mode(self, silent: bool) -> None:
         self._silent_mode = silent
-        if silent and self._provider is not None:
+        if silent:
+            self.interrupt()
+
+    @Slot()
+    def interrupt(self) -> None:
+        """Stop active playback and discard queued chunks from the current stream."""
+        with self._streaming_lock:
+            old_queue = self._chunk_queue
+            self._chunk_queue = queue.Queue()
+            if self._streaming_thread is not None and self._streaming_thread.is_alive():
+                _discard_queue(old_queue)
+                old_queue.put(None)
+            else:
+                self._streaming_thread = None
+
+        if self._provider is not None:
             try:
                 self._provider.stop()
             except Exception:
                 pass
+
+
+def _discard_queue(chunk_queue: "queue.Queue[Optional[str]]") -> None:
+    with chunk_queue.mutex:
+        chunk_queue.queue.clear()
+        chunk_queue.unfinished_tasks = 0
+        chunk_queue.all_tasks_done.notify_all()
 
 
 class TTSThread(QThread):
@@ -153,7 +176,11 @@ class TTSThread(QThread):
     def end_stream(self) -> None:
         QMetaObject.invokeMethod(self._manager, "end_stream", Qt.QueuedConnection)
 
+    def interrupt(self) -> None:
+        QMetaObject.invokeMethod(self._manager, "interrupt", Qt.QueuedConnection)
+
     def stop(self) -> None:
+        self.interrupt()
         self.quit()
         self.wait(3000)
 

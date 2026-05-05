@@ -1,18 +1,24 @@
 """
-scripts/profile_latency.py — Real-world profiling to verify sub-200ms TTFS goal.
+scripts/profile_latency.py - Phase 3 latency profiling.
 
-This script wires up the core Phase 3 components (AIClient, SentenceBuffer, TTSManager)
-and measures the Time-To-First-Speech (TTFS). TTFS is the delta between sending a 
-query and the TTS manager receiving the first chunk of text to speak.
+This script wires up the core Phase 3 components:
+AIClient -> SentenceBuffer -> TTSManager.
+
+In the default mock mode, TTFS is the delta between sending a query and the
+configured TTS provider's speak() call. This validates orchestration overhead,
+not audible Piper playback latency. Use --real to run against configured
+providers from config.json.
 """
 
+from __future__ import annotations
+
+import argparse
 import sys
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication
 
-# Ensure src/ is in the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.ai.ai_client import AIClient
@@ -21,65 +27,93 @@ from src.ai.tts_manager import TTSManager
 
 
 class LatencyTracker:
-    def __init__(self):
+    def __init__(self) -> None:
         self.start_time = 0.0
         self.ttfs_time = 0.0
         self.first_speech_received = False
-        
-    def mark_start(self):
+
+    def mark_start(self) -> None:
         self.start_time = time.perf_counter()
-        
-    def mark_speech(self, text: str):
+
+    def mark_tts_entry(self, text: str) -> None:
         if not self.first_speech_received:
             self.ttfs_time = time.perf_counter()
             self.first_speech_received = True
-            print(f"[{self.ttfs_time - self.start_time:.3f}s] First speech chunk: {text!r}")
+            print(f"[{self.ttfs_time - self.start_time:.3f}s] TTS speak() called with: {text!r}")
 
 
-def main():
-    # We need a QCoreApplication to use Qt signals/slots
+def _build_config(use_real: bool) -> tuple[dict, str]:
+    if use_real:
+        from src.core.config_manager import load_config
+
+        return load_config(), "configured real providers"
+
+    return (
+        {
+            "llm_provider": "mock",
+            "system_prompt": "You are KIBO.",
+            "tts_enabled": True,
+            "tts_provider": "mock",
+            "conversation_history_limit": 5,
+            "memory_extraction_inline": False,
+        },
+        "mock orchestration baseline",
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use configured real providers instead of mock providers.",
+    )
+    args = parser.parse_args()
+
     app = QCoreApplication.instance() or QCoreApplication(sys.argv)
-    
-    # Configure KIBO to use the fastest real models (or mock for baseline)
-    config = {
-        "llm_provider": "mock",
-        "system_prompt": "You are KIBO.",
-        "tts_enabled": True,
-        "tts_provider": "mock",
-        "conversation_history_limit": 5,
-        "memory_extraction_inline": False
-    }
+    config, profile_label = _build_config(args.real)
 
-    print("Initializing Phase 3 pipeline components...")
+    print(f"Initializing Phase 3 pipeline components ({profile_label})...")
     client = AIClient(config)
     buf = SentenceBuffer()
     tts = TTSManager(config)
     tracker = LatencyTracker()
 
-    # Wire components
     client.response_chunk.connect(buf.push)
-    buf.sentence_ready.connect(tracker.mark_speech)
     buf.sentence_ready.connect(tts.speak_chunk)
     buf.flushed.connect(tts.end_stream)
-    
-    # Force mock provider responses for consistent profiling
-    # (assuming AIClient has instantiated MockLLMProvider)
-    # We will just inject some words to be spoken
-    client._provider._responses = [
-        "Well", " hello", " there.",
-        " This", " is", " a", " latency", " test.",
-    ]
-    client._provider._delay = 0.02  # 20ms delay between words to simulate real LLM
+
+    if not tts._ensure_provider():
+        print("[FAILED] TTS provider unavailable.")
+        return 1
+
+    original_speak = tts._provider.speak
+
+    def measured_speak(text: str):
+        tracker.mark_tts_entry(text)
+        return original_speak(text)
+
+    tts._provider.speak = measured_speak
+
+    if not args.real:
+        client._provider._responses = [
+            "Well",
+            " hello",
+            " there.",
+            " This",
+            " is",
+            " a",
+            " latency",
+            " test.",
+        ]
+        client._provider._delay = 0.02
 
     print("\nStarting latency profile test...")
     tracker.mark_start()
     client.send_query("Say hello!")
     buf.flush()
-    
-    # Allow signals to propagate
     app.processEvents()
-    
-    # Wait for the drain thread to finish
+
     deadline = time.time() + 3.0
     while tts._streaming_thread and tts._streaming_thread.is_alive():
         time.sleep(0.01)
@@ -88,15 +122,24 @@ def main():
             print("Warning: Timeout waiting for TTS to finish")
             break
 
+    if not tracker.first_speech_received:
+        print("\n[FAILED] TTS speak() was never called.")
+        return 1
+
     ttfs_ms = (tracker.ttfs_time - tracker.start_time) * 1000
-    
+
     print("\n=== Latency Profiling Results ===")
+    print(f"Profile mode: {profile_label}")
     print(f"Time-To-First-Speech (TTFS): {ttfs_ms:.1f} ms")
-    
+    if not args.real:
+        print("Note: mock mode validates pipeline orchestration, not audible Piper playback.")
+
     if ttfs_ms < 200:
         print("[SUCCESS] Sub-200ms goal achieved.")
     else:
         print("[FAILED] Exceeded 200ms goal.")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

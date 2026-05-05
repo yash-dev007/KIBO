@@ -9,7 +9,9 @@ display server because we patch QDialog.exec and avoid triggering paint events.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -41,6 +43,15 @@ def app(_qapp):
     return _qapp
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_widgets(app):
+    yield
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.processEvents()
+
+
 @pytest.fixture()
 def base_config() -> dict:
     return {
@@ -57,6 +68,16 @@ def base_config() -> dict:
         "first_run_completed": False,
         "onboarding_version": "1.0",
     }
+
+
+@pytest.fixture()
+def temp_config_dir() -> Path:
+    path = Path(__file__).parent.parent / ".test_tmp" / f"onboarding-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -160,58 +181,60 @@ class TestPrivacyState:
 # ---------------------------------------------------------------------------
 
 class TestConfigPersistence:
-    def test_finish_writes_first_run_completed(self, app, base_config, tmp_path):
-        config_file = tmp_path / "config.json"
+    def test_finish_writes_first_run_completed(self, app, base_config, temp_config_dir):
+        config_file = temp_config_dir / "config.json"
         config_file.write_text("{}", encoding="utf-8")
 
-        with (
-            patch("src.ui.onboarding_window.get_app_root", return_value=tmp_path),
-            patch.object(OnboardingWindow, "accept"),
-        ):
-            win = OnboardingWindow(base_config)
-            win._finish()
+        dummy = MagicMock()
+        dummy._get_provider_state = None
+        dummy._get_privacy_state = None
+        dummy._persist_config = lambda updates, raw_key: OnboardingWindow._persist_config(
+            dummy, updates, raw_key
+        )
+
+        with patch("src.ui.onboarding_window.get_app_root", return_value=temp_config_dir):
+            OnboardingWindow._finish(dummy)
 
         written = json.loads(config_file.read_text(encoding="utf-8"))
         assert written.get("first_run_completed") is True
 
-    def test_finish_sets_was_completed_true(self, app, base_config, tmp_path):
-        config_file = tmp_path / "config.json"
-        config_file.write_text("{}", encoding="utf-8")
+    def test_finish_sets_was_completed_true(self, app, base_config, temp_config_dir):
+        dummy = MagicMock()
+        dummy._get_provider_state = None
+        dummy._get_privacy_state = None
+        dummy._completed = False
+        dummy._persist_config = MagicMock()
 
-        with (
-            patch("src.ui.onboarding_window.get_app_root", return_value=tmp_path),
-            patch.object(OnboardingWindow, "accept"),
-        ):
-            win = OnboardingWindow(base_config)
-            win._finish()
+        OnboardingWindow._finish(dummy)
 
-        assert win.was_completed() is True
+        assert OnboardingWindow.was_completed(dummy) is True
 
-    def test_persist_config_merges_with_existing(self, app, base_config, tmp_path):
-        config_file = tmp_path / "config.json"
+    def test_persist_config_merges_with_existing(self, app, base_config, temp_config_dir):
+        config_file = temp_config_dir / "config.json"
         config_file.write_text('{"pet_name": "TestPet"}', encoding="utf-8")
 
-        with (
-            patch("src.ui.onboarding_window.get_app_root", return_value=tmp_path),
-            patch.object(OnboardingWindow, "accept"),
-        ):
-            win = OnboardingWindow(base_config)
-            win._finish()
+        dummy = MagicMock()
+        dummy._get_provider_state = None
+        dummy._get_privacy_state = None
+        dummy._persist_config = lambda updates, raw_key: OnboardingWindow._persist_config(
+            dummy, updates, raw_key
+        )
+
+        with patch("src.ui.onboarding_window.get_app_root", return_value=temp_config_dir):
+            OnboardingWindow._finish(dummy)
 
         written = json.loads(config_file.read_text(encoding="utf-8"))
         assert written.get("pet_name") == "TestPet"
         assert written.get("first_run_completed") is True
 
-    def test_groq_raw_key_not_persisted_to_config(self, app, base_config, tmp_path):
-        config_file = tmp_path / "config.json"
+    def test_groq_raw_key_not_persisted_to_config(self, app, base_config, temp_config_dir):
+        config_file = temp_config_dir / "config.json"
         config_file.write_text("{}", encoding="utf-8")
 
-        with (
-            patch("src.ui.onboarding_window.get_app_root", return_value=tmp_path),
-            patch.object(OnboardingWindow, "accept"),
-        ):
-            win = OnboardingWindow(base_config)
-            win._persist_config(
+        dummy = MagicMock()
+        with patch("src.ui.onboarding_window.get_app_root", return_value=temp_config_dir):
+            OnboardingWindow._persist_config(
+                dummy,
                 {**base_config, "first_run_completed": True},
                 raw_groq_key="gsk_supersecret",
             )

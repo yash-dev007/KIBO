@@ -152,7 +152,13 @@ def main() -> int:
         task_runner = TaskRunner(config, ai_client=ai_thread.client)
         sentence_buffer = SentenceBuffer()
 
+        def _interrupt_current_turn() -> None:
+            sentence_buffer.reset()
+            ai_thread.cancel_current()
+            tts_thread.interrupt()
+
         # ── Mic button in chat → same flow as hardware hotkey ─────────────
+        chat_window.mic_pressed.connect(_interrupt_current_turn)
         chat_window.mic_pressed.connect(brain.on_listening_started)
         chat_window.mic_pressed.connect(voice_thread.on_hotkey_pressed)
         chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
@@ -180,6 +186,8 @@ def main() -> int:
             nonlocal _is_text_chat
             _is_text_chat = False
             sentence_buffer.reset()  # clear any leftover from previous turn
+            ai_thread.cancel_current()  # abort any in-flight stream before starting new one
+            tts_thread.interrupt()  # discard queued speech from the previous turn
             tts_thread.manager.set_silent_mode(False)
             brain.on_thinking_started()
             QMetaObject.invokeMethod(
@@ -203,6 +211,7 @@ def main() -> int:
         chat_window.message_sent.connect(_handle_text_query)
 
         # Hotkey -> Brain (listening) + VoiceThread (record)
+        hotkey_thread.hotkey_pressed.connect(_interrupt_current_turn)
         hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
         hotkey_thread.hotkey_pressed.connect(voice_thread.on_hotkey_pressed)
         hotkey_thread.hotkey_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))

@@ -15,11 +15,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=1a1a1a)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?style=flat-square&labelColor=1a1a1a)](https://doc.qt.io/qtforpython/)
 [![LLM: Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Ollama-F54F29?style=flat-square&labelColor=1a1a1a)](https://console.groq.com)
-[![Tests](https://img.shields.io/badge/tests-185%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
+[![Tests](https://img.shields.io/badge/tests-230%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
 
 <br/>
 
-> **KIBO is not a chatbot widget. It's a frameless, transparent animated character that sits on your desktop, listens for your voice, responds with neural TTS, and builds persistent long-term memory — all running locally.**
+> **KIBO is not a chatbot widget. It's a frameless, transparent animated character that sits on your desktop, listens for your voice, responds with neural TTS, and builds persistent long-term memory. It is cloud-fast with Groq when configured, and locally capable through Ollama/Piper fallbacks.**
 
 <br/>
 
@@ -48,6 +48,7 @@
 
 - **Push-to-talk** (`Ctrl+K`) with faster-whisper `base.en` + silero-vad endpointing
 - **Streaming sentence → TTS pipeline** — Piper neural audio starts playing while the LLM is still generating
+- **Interruptible voice loop** — pressing push-to-talk while KIBO is speaking cancels the active LLM stream, stops TTS, and drops stale queued speech
 - **Groq cloud LLM** (`llama-3.3-70b-versatile`, ~6 000 tok/s free tier) with automatic Ollama fallback
 - **Inline memory extraction** — the LLM emits `remember` tool calls mid-stream; malformed tool JSON is suppressed so memory writes never leak into chat bubbles
 - **Personality contract** — KIBO's character, tone, and safety constraints are versioned and injected via `PromptBuilder` on every conversation
@@ -267,10 +268,11 @@ All numbers on Ryzen 5 5600 + 16 GB RAM, Windows 11, Groq + Piper + base.en Whis
 |---|---|
 | Voice round-trip (hotkey → speech starts) | ~1.2 s |
 | First TTS audio chunk after LLM start | < 200 ms |
+| Mock orchestration TTFS (`scripts/profile_latency.py`) | ~67 ms |
 | Memory embedding (fastembed bge-small) | ~15 ms / fact |
 | CPU at idle (animations running) | < 2 % |
 | Peak RAM | ~380 MB (models loaded) |
-| Test suite (185 tests) | ~16 s |
+| Test suite (230 passed, 3 skipped) | ~9 s |
 
 ---
 
@@ -311,7 +313,8 @@ src/
     └── config_manager.py      # Load + validate config.json, returns immutable MappingProxyType
 main.py                        # Entry point — onboarding check, Qt app, signal wiring
 scripts/
-└── preprocess_alpha.py        # One-time WebM → VP9 alpha batch converter (requires ffmpeg)
+├── preprocess_alpha.py        # One-time WebM → VP9 alpha batch converter (requires ffmpeg)
+└── profile_latency.py         # Phase 3 TTFS profiler (mock baseline or configured real providers)
 ```
 
 ### Provider abstraction
@@ -351,12 +354,19 @@ Every layer is independently testable. `ProactivePolicy` is pure — no I/O, inj
 uv run python -m pytest tests/ -q
 ```
 
-**185 tests** across 14 modules — unit, integration, and component coverage:
+Current baseline:
+
+```text
+230 passed, 3 skipped in 8.84s
+```
+
+**230 passing tests** across 17 modules — unit, integration, and component coverage:
 
 | Module | Coverage |
 |---|---|
 | `test_ai_client.py` | Streaming LLM, inline memory tool calls, provider abstraction |
 | `test_brain.py` | Pet state machine transitions |
+| `test_phase3_pipeline.py` | End-to-end streaming conversation pipeline, cancellation, memory tool emission |
 | `test_prompt_builder.py` | Personality contract injection, snapshot tests |
 | `test_proactive_engine.py` | ProactivePolicy rules, daily cap, quiet hours, snooze, cooldowns |
 | `test_notification_router.py` | Routing, persistence, snooze API, category disable |
@@ -368,7 +378,25 @@ uv run python -m pytest tests/ -q
 | `test_animation_engine.py` | Asset resolution, skin selection |
 | `test_calendar_manager.py` | Event parsing, lookahead window |
 | `test_task_runner.py` | Task lifecycle |
-| `test_onboarding_window.py` | Config persistence, provider choice |
+| `test_onboarding_window.py` | Config persistence, provider choice, headless Qt safety |
+| `test_tts_manager.py` | Streaming TTS queue, interruption, stale chunk prevention |
+| `test_voice_listener.py` | Whisper/VAD loading, endpoint fallback, transcription behavior |
+
+### Latency profiling
+
+Mock orchestration baseline:
+
+```bash
+uv run python scripts/profile_latency.py
+```
+
+Real configured providers:
+
+```bash
+uv run python scripts/profile_latency.py --real
+```
+
+Real-mode latency requires the intended Phase 3 stack: Groq SDK + `GROQ_API_KEY`, Piper package, and a Piper voice model under `models/piper/`. If Groq or Piper is missing, the profiler intentionally measures the slower fallback path and may fail the sub-200 ms target.
 
 ---
 
@@ -397,6 +425,7 @@ This bakes transparency offline. Runtime CPU cost: zero.
 
 - [x] **Phase 2** — Memory Transparency UI: inspect, search, edit, and delete individual facts from inside KIBO
 - [ ] **Phase 3** — Personality and Memory Coherence: stronger recall, consistent character voice across sessions
+- [x] **Phase 4.5A** — Voice/TTS interruption hardening: push-to-talk cancels active speech and queued chunks
 - [ ] **Phase 4** — Settings, Controls, and Error Surfaces: Open Data Folder, Reset Onboarding, hotkey conflict detection
 - [ ] **Phase 4.5** — Voice, Hotkey, and Device Reliability: audio device fallback, hotkey health signal
 - [ ] **Phase 5** — Engineering Credibility and Demo Resilience: demo mode, deterministic replay
@@ -416,7 +445,7 @@ Issues and PRs are welcome. Please open an issue first for anything larger than 
 
 1. Fork → create a feature branch
 2. Write tests first (TDD: red → green → refactor)
-3. `uv run python -m pytest tests/ -q` must pass (all 185)
+3. `uv run python -m pytest tests/ -q` must pass (all 230 passing tests)
 4. Submit a PR with a clear description of what changed and why
 
 ---

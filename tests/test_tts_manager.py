@@ -52,6 +52,28 @@ class _FakeTTSProvider:
         self.stopped = True
 
 
+class _BlockingTTSProvider:
+    """Blocks during speak() until stop() is called, so interruption is deterministic."""
+
+    def __init__(self) -> None:
+        self.spoken: list[str] = []
+        self.stopped: bool = False
+        self.started = threading.Event()
+        self.released = threading.Event()
+
+    def is_available(self) -> bool:
+        return True
+
+    def speak(self, text: str) -> None:
+        self.spoken.append(text)
+        self.started.set()
+        self.released.wait(timeout=2.0)
+
+    def stop(self) -> None:
+        self.stopped = True
+        self.released.set()
+
+
 def _make_manager(config: dict | None = None, provider=None):
     from src.ai.tts_manager import TTSManager
     cfg = config or BASE_CONFIG
@@ -201,6 +223,41 @@ class TestStreamingChunks:
         mgr.end_stream()
         self._drain(mgr)
         assert prov.spoken == ["Real sentence."]
+
+    def test_interrupt_stops_current_audio_and_discards_queued_chunks(self, qt_app):
+        prov = _BlockingTTSProvider()
+        mgr, _ = _make_manager(provider=prov)
+
+        mgr.speak_chunk("Current sentence.")
+        assert prov.started.wait(timeout=2.0), "TTS did not start speaking"
+        mgr.speak_chunk("Stale queued sentence.")
+
+        mgr.interrupt()
+        self._drain(mgr)
+
+        assert prov.stopped is True
+        assert prov.spoken == ["Current sentence."]
+
+    def test_new_chunk_after_interrupt_starts_fresh_stream(self, qt_app):
+        prov = _BlockingTTSProvider()
+        mgr, _ = _make_manager(provider=prov)
+
+        mgr.speak_chunk("Old sentence.")
+        assert prov.started.wait(timeout=2.0), "TTS did not start speaking"
+        mgr.speak_chunk("Old queued sentence.")
+        mgr.interrupt()
+        self._drain(mgr)
+
+        prov.started.clear()
+        prov.released.clear()
+        mgr.set_silent_mode(False)
+        mgr.speak_chunk("Fresh sentence.")
+        assert prov.started.wait(timeout=2.0), "fresh stream did not start"
+        mgr.end_stream()
+        prov.released.set()
+        self._drain(mgr)
+
+        assert prov.spoken == ["Old sentence.", "Fresh sentence."]
 
 
 # ---------------------------------------------------------------------------
