@@ -212,7 +212,7 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 
 | Key | Default | Description |
 |---|---|---|
-| `llm_provider` | `"auto"` | `"auto"`, `"groq"`, or `"ollama"` |
+| `llm_provider` | `"auto"` | `"auto"`, `"groq"`, `"ollama"`, or `"mock"` |
 | `groq_model` | `"llama-3.3-70b-versatile"` | Groq model ID |
 | `groq_api_key_env` | `"GROQ_API_KEY"` | Environment variable name for the Groq key |
 | `ollama_model` | `"qwen2.5-coder:7b"` | Ollama model to pull and use |
@@ -222,7 +222,7 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 
 | Key | Default | Description |
 |---|---|---|
-| `tts_provider` | `"auto"` | `"auto"`, `"piper"`, or `"pyttsx3"` |
+| `tts_provider` | `"auto"` | `"auto"`, `"piper"`, `"pyttsx3"`, or `"mock"` |
 | `piper_model` | `"en_US-amy-medium"` | Piper voice model name |
 | `piper_models_dir` | `"models/piper"` | Directory containing `.onnx` + `.json` model files |
 | `stt_model` | `"base.en"` | Whisper model size |
@@ -232,7 +232,7 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 
 | Key | Default | Description |
 |---|---|---|
-| `memory_provider` | `"auto"` | `"auto"`, `"vector"`, or `"lexical"` |
+| `memory_provider` | `"auto"` | `"auto"`, `"vector"`, `"lexical"`, or `"mock"` |
 | `memory_enabled` | `true` | Persist and retrieve long-term facts |
 | `memory_extraction_inline` | `true` | Extract memories via LLM tool calls mid-stream |
 | `memory_max_facts` | `200` | Retention cap; oldest facts evicted first |

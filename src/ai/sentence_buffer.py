@@ -49,6 +49,16 @@ class SentenceBuffer(QObject):
         self._buf = ""
         self.flushed.emit()
 
+    @Slot()
+    def reset(self) -> None:
+        """Discard buffered text without emitting anything.
+
+        Call this at the start of every new conversation turn to prevent
+        leftover fragments from a cancelled or interrupted stream from
+        leaking into the next reply.
+        """
+        self._buf = ""
+
     def _extract_sentences(self) -> Iterator[str]:
         """Pull as many full sentences out of the buffer as possible.
 

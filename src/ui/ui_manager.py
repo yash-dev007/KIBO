@@ -291,11 +291,26 @@ class UIManager(QWidget):
 
     @Slot(str)
     def on_response_done(self, text: str) -> None:
+        """Stream is complete. Let the bubble keep its streamed content.
+
+        The bubble already shows the full text incrementally via
+        on_response_chunk. Overwriting it here would cause a jarring visual
+        jump while TTS is still speaking the first sentence. Instead, we
+        simply restart the auto-hide timer so the complete reply stays visible
+        for the full timeout duration from *end* of generation, not from the
+        first token.
+        """
         if not self._config.get("enable_speech_bubbles", True):
             return
-        self._streaming_response = text
-        self._bubble.show_text(text)
-        self._position_bubble()
+        if self._bubble.isVisible():
+            # Restart the hide timer from zero so the user gets the full
+            # read-time after generation finishes, not a leftover partial timer.
+            self._bubble._timer.start(self._bubble._timeout_ms)
+        elif self._streaming_response:
+            # Bubble was hidden mid-stream (e.g., user dismissed it).
+            # Do nothing — don't force it back open.
+            pass
+
 
     @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:

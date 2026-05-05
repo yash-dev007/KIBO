@@ -165,6 +165,7 @@ def main() -> int:
         def _handle_text_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = True
+            sentence_buffer.reset()  # clear any leftover from previous turn
             ai_thread.cancel_current()  # abort any in-flight stream before starting new one
             tts_thread.manager.set_silent_mode(True)
             brain.on_thinking_started()  # show THINKING animation during text chat
@@ -178,6 +179,7 @@ def main() -> int:
         def _handle_voice_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = False
+            sentence_buffer.reset()  # clear any leftover from previous turn
             tts_thread.manager.set_silent_mode(False)
             brain.on_thinking_started()
             QMetaObject.invokeMethod(

@@ -21,9 +21,18 @@ def get_provider(config: dict) -> LLMProvider:
       1. Groq (if API key present and SDK installed)
       2. Ollama (if reachable)
 
+    Special values:
+      "mock" — Returns MockLLMProvider (deterministic, no network). For tests
+               and offline/demo mode only.
+
     Returns the chosen provider; raises RuntimeError if none usable.
     """
     choice = config.get("llm_provider", "auto").lower()
+
+    if choice == "mock":
+        from .mock_provider import MockLLMProvider
+        logger.info("LLM provider: Mock (deterministic, no network)")
+        return MockLLMProvider()
 
     if choice in ("groq", "auto"):
         provider = _try_groq(config)

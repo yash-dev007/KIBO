@@ -19,8 +19,16 @@ def get_provider(config: dict) -> TTSProvider:
     Order when tts_provider == "auto":
       1. Piper (neural, local, ONNX)
       2. pyttsx3 (SAPI5, robotic but always works on Windows)
+
+    Special values:
+      "mock" — Silent provider that records speak() calls. For tests/CI only.
     """
     choice = config.get("tts_provider", "auto").lower()
+
+    if choice == "mock":
+        from .mock_provider import MockTTSProvider
+        logger.info("TTS provider: Mock (silent, no audio)")
+        return MockTTSProvider(config)
 
     if choice in ("piper", "auto"):
         provider = _try_piper(config)
