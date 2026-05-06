@@ -13,7 +13,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.system.provider_health import check_groq, check_ollama, check_piper
+from unittest.mock import patch
+
+from src.system.provider_health import (
+    check_audio_output,
+    check_groq,
+    check_hotkey,
+    check_ollama,
+    check_piper,
+    check_piper_package,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -81,4 +90,74 @@ class TestCheckOllama:
 
     def test_invalid_host_returns_unavailable(self) -> None:
         result = check_ollama("http://192.0.2.0:11434")  # TEST-NET — never routed
+        assert result["available"] is False
+
+
+# ---------------------------------------------------------------------------
+# check_audio_output
+# ---------------------------------------------------------------------------
+
+class TestCheckAudioOutput:
+    def test_returns_available_when_outputs_exist(self) -> None:
+        fake_devices = [
+            {"name": "Speakers", "max_output_channels": 2, "max_input_channels": 0},
+            {"name": "Mic", "max_output_channels": 0, "max_input_channels": 1},
+        ]
+        with patch("sounddevice.query_devices", return_value=fake_devices):
+            result = check_audio_output()
+        assert result["available"] is True
+        assert "1" in result["reason"]  # one output device found
+
+    def test_returns_unavailable_with_no_outputs(self) -> None:
+        fake_devices = [
+            {"name": "Mic", "max_output_channels": 0, "max_input_channels": 1},
+        ]
+        with patch("sounddevice.query_devices", return_value=fake_devices):
+            result = check_audio_output()
+        assert result["available"] is False
+        assert "No audio output" in result["reason"]
+
+    def test_handles_query_devices_error(self) -> None:
+        with patch("sounddevice.query_devices", side_effect=RuntimeError("no devices")):
+            result = check_audio_output()
+        assert result["available"] is False
+        assert "no devices" in result["reason"]
+
+
+# ---------------------------------------------------------------------------
+# check_piper_package
+# ---------------------------------------------------------------------------
+
+class TestCheckPiperPackage:
+    def test_returns_unavailable_on_import_error(self) -> None:
+        with patch("importlib.import_module", side_effect=ImportError("no module piper")):
+            result = check_piper_package()
+        assert result["available"] is False
+        assert "not installed" in result["reason"]
+
+    def test_returns_available_when_importable(self) -> None:
+        with patch("importlib.import_module", return_value=object()):
+            result = check_piper_package()
+        assert result["available"] is True
+
+
+# ---------------------------------------------------------------------------
+# check_hotkey
+# ---------------------------------------------------------------------------
+
+class TestCheckHotkey:
+    def test_none_returns_unavailable(self) -> None:
+        result = check_hotkey(None)
+        assert result["available"] is False
+
+    def test_empty_string_returns_unavailable(self) -> None:
+        assert check_hotkey("")["available"] is False
+
+    def test_valid_hotkey_returns_available(self) -> None:
+        result = check_hotkey("ctrl+k")
+        assert result["available"] is True
+
+    def test_invalid_hotkey_returns_unavailable(self) -> None:
+        # An obviously malformed hotkey string
+        result = check_hotkey("ctrl++")
         assert result["available"] is False

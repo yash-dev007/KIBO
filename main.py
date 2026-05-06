@@ -8,6 +8,7 @@ system-monitor-only mode (no hotkey, no voice, no Ollama required).
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import os
 import re
@@ -20,7 +21,7 @@ from PySide6.QtCore import Qt, QLockFile, QMetaObject, Q_ARG, QTimer
 from PySide6.QtWidgets import QApplication
 
 from src.ai.brain import Brain
-from src.core.config_manager import load_config
+from src.core.config_manager import get_user_data_dir, load_config
 from src.system.system_monitor import SystemMonitor
 from src.ui.ui_manager import UIManager
 from src.ui.tray_manager import TrayManager
@@ -32,10 +33,23 @@ from src.ui.settings_window import SettingsWindow
 from src.system.task_runner import TaskRunner
 from src.system.calendar_manager import CalendarManager
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+def _configure_logging() -> None:
+    logs_dir = get_user_data_dir() / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    file_handler = RotatingFileHandler(
+        logs_dir / "kibo.log",
+        maxBytes=512_000,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(fmt)
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +110,19 @@ def main() -> int:
     
     proactive_engine.proactive_notification.connect(notification_router.route)
     notification_router.notification_approved.connect(lambda msg, _: ui.show_notification(msg))
+
+    def _snooze_proactivity() -> None:
+        notification_router.snooze(hours=1)
+        ui.show_notification("Okay, I'll stay quiet for an hour.")
+
+    def _disable_proactivity() -> None:
+        notification_router.disable_proactivity()
+        ui.show_notification("Proactivity is off for this session.")
+
+    ui.snooze_proactivity.connect(_snooze_proactivity)
+    tray.snooze_proactivity.connect(_snooze_proactivity)
+    ui.disable_proactivity.connect(_disable_proactivity)
+    tray.disable_proactivity.connect(_disable_proactivity)
     
     # Animation finished signal → Brain (handles INTRO→IDLE and ACTING→IDLE)
     ui.animation_finished.connect(brain.on_animation_done)
@@ -103,6 +130,7 @@ def main() -> int:
     # ── Tray ──────────────────────────────────────────────────────────
     tray.show_chat.connect(chat_window.show)
     tray.hide_chat.connect(chat_window.hide)
+    tray.show_settings.connect(settings_window.show)
     tray.quit_requested.connect(app.quit)
     ui.quit_requested.connect(app.quit)
     chat_window.visibility_changed.connect(tray.set_chat_visible)
@@ -164,6 +192,8 @@ def main() -> int:
         chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
         
         settings_window.settings_changed.connect(ai_thread.on_config_changed)
+        settings_window.test_voice_requested.connect(tts_thread.test_voice)
+        settings_window.voice_warmup_requested.connect(voice_thread.warm_up)
 
         # ── Chat input → AI (queued, thread-safe) ─────────────────────────
         _is_text_chat = False
@@ -218,6 +248,15 @@ def main() -> int:
 
         # Clip hotkey → ClipRecorder
         hotkey_thread.clip_hotkey_pressed.connect(clip_recorder.dump)
+        hotkey_thread.registration_failed.connect(
+            lambda hotkey: ui.on_ai_error(f"Hotkey failed to register: {hotkey}")
+        )
+        settings_window.settings_changed.connect(
+            lambda cfg: hotkey_thread.rebind(
+                cfg.get("activation_hotkey", "ctrl+k"),
+                cfg.get("clip_hotkey", "ctrl+alt+k"),
+            )
+        )
 
         # Voice thread states -> UI
         voice_thread.recording_started.connect(chat_window.show_listening_indicator)
@@ -266,6 +305,8 @@ def main() -> int:
         tts_thread.start()
         hotkey_thread.start()
         task_runner.start()
+        if config.get("voice_warmup_on_launch", True):
+            QTimer.singleShot(250, voice_thread.warm_up)
 
         logger.info("AI enabled. Press %s to talk to KIBO.", config["activation_hotkey"])
     else:

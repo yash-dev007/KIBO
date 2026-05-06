@@ -23,6 +23,12 @@ from src.ai.llm_providers import LLMProvider, get_provider
 from src.ai.llm_providers.base import REMEMBER_TOOL_SCHEMA
 from src.ai.memory_store import MemoryStore
 from src.ai.prompt_builder import PromptBuilder
+from src.ai.safety import (
+    SafetyCategory,
+    check_assistant_response,
+    check_user_input,
+    crisis_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,7 @@ class AIClient(QObject):
     response_chunk = Signal(str)         # text token delta
     response_done = Signal(str)          # full reply text
     memory_fact_extracted = Signal(dict) # one fact dict per `remember` tool call
+    safety_event = Signal(str, str)      # (event_type, detail) — e.g. ("self_harm", "..."), ("response_flagged", "...")
     error_occurred = Signal(str)
 
     def __init__(
@@ -99,6 +106,23 @@ class AIClient(QObject):
             self.error_occurred.emit(
                 "No LLM provider configured. Set GROQ_API_KEY or start Ollama."
             )
+            return
+
+        # Pre-LLM safety check: short-circuit on self-harm signals so the LLM
+        # cannot accidentally minimize or moralize. KIBO replies with a calm,
+        # resource-bearing message and skips the round-trip.
+        user_safety = check_user_input(user_text)
+        if user_safety.flagged:
+            self.safety_event.emit(
+                SafetyCategory.SELF_HARM.value, "User input flagged for self-harm signals"
+            )
+            self._history.append({"role": "user", "content": user_text})
+            self._trim_history()
+            crisis_text = crisis_response()
+            self.response_chunk.emit(crisis_text)
+            self._history.append({"role": "assistant", "content": crisis_text})
+            self._trim_history()
+            self.response_done.emit(crisis_text)
             return
 
         self._cancel_event.clear()
@@ -190,6 +214,19 @@ class AIClient(QObject):
             self.response_chunk.emit(full_response)
 
         if full_response:
+            # Post-LLM safety check: emit a structured warning event when the
+            # reply contains prohibited claims/content. We do not mutate the
+            # text — the prompt rules carry the load; this is a flag for
+            # logging and any downstream UI.
+            response_safety = check_assistant_response(full_response)
+            if response_safety.flagged:
+                category_value = (
+                    response_safety.categories[0].value
+                    if response_safety.categories
+                    else "response_flagged"
+                )
+                self.safety_event.emit(category_value, response_safety.message)
+
             self._history.append({"role": "assistant", "content": full_response})
             self._trim_history()
             self.response_done.emit(full_response)
@@ -312,6 +349,7 @@ class AIThread(QThread):
     response_chunk = Signal(str)
     response_done = Signal(str)
     memory_fact_extracted = Signal(dict)
+    safety_event = Signal(str, str)
     error_occurred = Signal(str)
 
     def __init__(
@@ -326,6 +364,7 @@ class AIThread(QThread):
         self._client.response_chunk.connect(self.response_chunk)
         self._client.response_done.connect(self.response_done)
         self._client.memory_fact_extracted.connect(self.memory_fact_extracted)
+        self._client.safety_event.connect(self.safety_event)
         self._client.error_occurred.connect(self.error_occurred)
 
     def run(self) -> None:

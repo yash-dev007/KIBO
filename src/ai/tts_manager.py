@@ -124,6 +124,28 @@ class TTSManager(QObject):
             self.interrupt()
 
     @Slot()
+    def test_voice(self) -> None:
+        """Speak a short fixed phrase so the user can verify TTS in Settings.
+
+        Bypasses silent_mode so a Settings "Test voice" button still produces
+        sound when the user has muted KIBO during a conversation.
+        """
+        if not self._enabled:
+            self.error_occurred.emit("TTS is disabled.")
+            self.speech_done.emit()
+            return
+        if not self._ensure_provider():
+            self.speech_done.emit()
+            return
+        try:
+            self._provider.speak("Hi, this is KIBO. Voice test successful.")
+        except Exception as exc:
+            logger.error("Test voice failed: %s", exc)
+            self.error_occurred.emit(f"Test voice failed: {exc}")
+        finally:
+            self.speech_done.emit()
+
+    @Slot()
     def interrupt(self) -> None:
         """Stop active playback and discard queued chunks from the current stream."""
         with self._streaming_lock:
@@ -178,6 +200,9 @@ class TTSThread(QThread):
 
     def interrupt(self) -> None:
         QMetaObject.invokeMethod(self._manager, "interrupt", Qt.QueuedConnection)
+
+    def test_voice(self) -> None:
+        QMetaObject.invokeMethod(self._manager, "test_voice", Qt.QueuedConnection)
 
     def stop(self) -> None:
         self.interrupt()

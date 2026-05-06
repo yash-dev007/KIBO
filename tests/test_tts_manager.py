@@ -145,6 +145,30 @@ class TestSpeak:
         mgr.speak("This will fail")
         assert done == [True]
 
+    def test_test_voice_bypasses_silent_mode(self, qt_app):
+        mgr, prov = _make_manager()
+        mgr.set_silent_mode(True)
+        done: list[bool] = []
+        mgr.speech_done.connect(lambda: done.append(True))
+
+        mgr.test_voice()
+
+        assert prov.spoken == ["Hi, this is KIBO. Voice test successful."]
+        assert done == [True]
+
+    def test_test_voice_disabled_emits_error_and_done(self, qt_app):
+        mgr, prov = _make_manager({"tts_enabled": False, "tts_provider": "mock"})
+        errors: list[str] = []
+        done: list[bool] = []
+        mgr.error_occurred.connect(errors.append)
+        mgr.speech_done.connect(lambda: done.append(True))
+
+        mgr.test_voice()
+
+        assert prov.spoken == []
+        assert errors == ["TTS is disabled."]
+        assert done == [True]
+
 
 # ---------------------------------------------------------------------------
 # TestStreamingChunks — speak_chunk / end_stream

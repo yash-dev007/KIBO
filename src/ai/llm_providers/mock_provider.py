@@ -35,7 +35,11 @@ class MockLLMProvider:
         responses: list[str] | None = None,
         tool_calls: list[ToolCall] | None = None,
         delay_ms: int = 0,
+        config: dict | None = None,
     ) -> None:
+        if config:
+            responses = config.get("demo_llm_responses", responses)
+            delay_ms = int(config.get("demo_llm_delay_ms", delay_ms))
         self._responses: list[str] = responses or ["Mock response."]
         self._tool_calls: list[ToolCall] = tool_calls or []
         self._delay: float = delay_ms / 1000.0

@@ -62,3 +62,61 @@ def check_microphone() -> dict:
         return {"available": False, "reason": "No audio input devices found"}
     except Exception as exc:
         return {"available": False, "reason": str(exc)}
+
+
+def check_audio_output() -> dict:
+    """Check if at least one audio output device is reachable.
+
+    Uses sounddevice's host API to list output devices. No audio is played.
+    """
+    try:
+        import sounddevice as sd  # optional dep; guarded by try/except
+
+        devices = sd.query_devices()
+        outputs = [
+            d for d in devices if isinstance(d, dict) and d.get("max_output_channels", 0) > 0
+        ]
+        if outputs:
+            return {
+                "available": True,
+                "reason": f"{len(outputs)} output device(s) found",
+            }
+        return {"available": False, "reason": "No audio output devices found"}
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}
+
+
+def check_piper_package() -> dict:
+    """Check whether the `piper` Python package is importable.
+
+    Distinguishes a missing package from a missing voice model so the
+    Settings UI can guide the user to the right fix.
+    """
+    try:
+        import importlib
+
+        importlib.import_module("piper")
+        return {"available": True, "reason": "piper package importable"}
+    except ImportError as exc:
+        return {"available": False, "reason": f"piper package not installed: {exc}"}
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}
+
+
+def check_hotkey(hotkey: str | None) -> dict:
+    """Check whether a hotkey string can be parsed by the keyboard library.
+
+    Does NOT register the hotkey — purely a syntactic validation so Settings
+    can warn before the user saves a typo.
+    """
+    if not hotkey or not isinstance(hotkey, str):
+        return {"available": False, "reason": "Hotkey not configured"}
+    try:
+        import keyboard  # optional dep; guarded by try/except
+
+        keyboard.parse_hotkey(hotkey)
+        return {"available": True, "reason": f"'{hotkey}' is a valid hotkey"}
+    except ValueError as exc:
+        return {"available": False, "reason": f"Invalid hotkey '{hotkey}': {exc}"}
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}

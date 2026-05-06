@@ -163,9 +163,19 @@ class TestProactivePolicy:
         assert not d.approved
         assert d.reason == "quiet_hours"
 
-    def test_allows_high_priority_during_quiet_hours(self):
+    def test_blocks_high_priority_during_quiet_hours_without_explicit_reminder(self):
         d = self.policy.evaluate(
             evt("meeting-reminder", priority="high"), make_state(), make_config(), clock_at(23)
+        )
+        assert not d.approved
+        assert d.reason == "quiet_hours"
+
+    def test_allows_explicit_reminder_during_quiet_hours(self):
+        d = self.policy.evaluate(
+            evt("reminder", priority="high", explicit_reminder=True, bypass_cap=True),
+            make_state(),
+            make_config(),
+            clock_at(23),
         )
         assert d.approved
 
@@ -234,15 +244,15 @@ class TestProactivePolicy:
         assert not d.approved
         assert d.reason == "daily_cap"
 
-    def test_medium_priority_bypasses_daily_cap(self):
+    def test_medium_priority_respects_daily_cap(self):
         state = make_state(daily_utterance_count=DAILY_CAP, daily_utterance_date=date(2026, 5, 2))
         d = self.policy.evaluate(evt("battery-low", priority="medium"), state, make_config(), clock_at(14))
-        assert d.reason != "daily_cap"
+        assert d.reason == "daily_cap"
 
-    def test_high_priority_bypasses_daily_cap(self):
+    def test_high_priority_respects_daily_cap_without_explicit_reminder(self):
         state = make_state(daily_utterance_count=DAILY_CAP, daily_utterance_date=date(2026, 5, 2))
         d = self.policy.evaluate(evt("meeting-reminder", priority="high"), state, make_config(), clock_at(14))
-        assert d.reason != "daily_cap"
+        assert d.reason == "daily_cap"
 
     def test_explicit_reminder_bypass_cap_flag(self):
         state = make_state(daily_utterance_count=DAILY_CAP, daily_utterance_date=date(2026, 5, 2))
@@ -275,12 +285,12 @@ class TestProactivePolicy:
         d = self.policy.evaluate(evt("idle-checkin", priority="low"), state, make_config(), now)
         assert d.reason != "min_interval"
 
-    def test_medium_priority_bypasses_min_interval(self):
+    def test_medium_priority_respects_min_interval(self):
         now = clock_at(10)
         recent_ts = int((now - timedelta(minutes=5)).timestamp())
         state = make_state(last_utterance_ts=recent_ts)
         d = self.policy.evaluate(evt("battery-low", priority="medium"), state, make_config(), now)
-        assert d.reason != "min_interval"
+        assert d.reason == "min_interval"
 
     def test_zero_last_utterance_ts_skips_min_interval(self):
         d = self.policy.evaluate(
@@ -388,20 +398,24 @@ class TestDailyCapIntegration:
 
         assert approved_count <= DAILY_CAP
 
-    def test_medium_priority_not_counted_in_daily_cap(self):
-        """Medium-priority events don't count toward daily cap."""
+    def test_medium_priority_counted_in_daily_cap(self):
+        """All non-explicit proactive utterances count toward the daily cap."""
         policy = ProactivePolicy()
         config = make_config()
-        # Start with 3 low-priority count
         state = make_state(daily_utterance_count=3, daily_utterance_date=date(2026, 5, 2))
 
-        # Medium priority (battery) should still be allowed
         d = policy.evaluate(evt("battery-low", priority="medium"), state, config, clock_at(14))
         assert d.approved
 
-        # And a 4th low-priority should still be allowed
-        d = policy.evaluate(evt("idle-checkin", priority="low"), state, config, clock_at(14))
-        assert d.approved
+        state = dataclasses.replace(
+            state,
+            daily_utterance_count=4,
+            last_utterance_ts=int(clock_at(14).timestamp()),
+            per_rule_last_fired={"battery-low": int(clock_at(14).timestamp())},
+        )
+        d = policy.evaluate(evt("idle-checkin", priority="low"), state, config, clock_at(15))
+        assert not d.approved
+        assert d.reason == "daily_cap"
 
     def test_day_boundary_resets_count(self):
         """New calendar day resets the daily cap counter."""

@@ -18,12 +18,12 @@ Be honest about the starting line before redrawing the map.
 - Provider abstraction for LLM (Groq cloud, Ollama local) and TTS (Piper neural, pyttsx3 fallback).
 - Chat window with warm earthy palette, scroll throttling, streaming text.
 - Clip Mode: 5-second ring buffer → animated WebP, hotkey-triggered, auto-opens folder.
-- 77/77 tests passing. Single source of truth in `config.json`.
+- 313-test pytest suite passing. Single source of truth in `config.json`.
 
 **What's incomplete:**
-- Proactivity engine (Phase 5): not yet implemented.
-- Personality consistency under long context: untested.
-- Memory transparency UI: user cannot inspect or delete what KIBO remembers.
+- Diagnostics/data lifecycle is partial: diagnostics export exists, but full data export/import/reset is future work.
+- Explicit reminders are not yet a user-facing feature; the policy supports urgent explicit reminders, but there is no reminder creation UI.
+- Packaging/distribution surfaces are not yet shipped.
 - macOS support: post-v5.
 - Distribution: no installer, no auto-update, no website.
 - Retention story: every session feels like a first session.
@@ -145,7 +145,7 @@ A one-page Personality Contract:
 - evolution rules (does personality drift with use?).
 
 ## Status
-Implicit in code, not explicit in doc. **Action: write the contract down.** When the prompt template is the only place personality lives, it cannot be reviewed, debated, or evolved deliberately.
+Complete. The personality contract exists in `docs/superpowers/specs/KIBO_Personality_Contract.md`, and prompt/safety regression tests keep the runtime prompt from drifting silently.
 
 ## Failure mode
 Generic warmth. If KIBO sounds like a default assistant with a smaller font, the project loses its center.
@@ -243,7 +243,7 @@ KIBO remembers what matters and recalls it when relevant.
 - **User-facing transparency: a way to see, edit, and delete what KIBO knows.**
 
 ## Status
-✅ Engineering complete. ☐ Transparency UI not yet shipped.
+Complete for v1. Memory extraction/retrieval is implemented, and Settings includes a Memory tab for listing, searching, editing, deleting, clearing, opening the vault, and rebuilding the index.
 
 ## Design rule
 Memory must feel **selective, useful, and lightly surprising** — not invasive, noisy, or formal. KIBO should remember the name of the user's cat, not log every sentence.
@@ -272,16 +272,16 @@ A small proactive engine with strict rate limits:
 - Reminders set explicitly by the user.
 
 ## Status
-☐ Not yet implemented. **This is the next phase.**
+Implemented as a guarded v1. KIBO has a proactive engine, persisted policy/router state, daily cap, quiet hours, cooldowns, snooze/disable controls, battery/CPU/meeting/morning/idle/end-of-day triggers, and deterministic tests. Explicit reminder creation is still future work.
 
 ## Design rule
 Proactivity must be **rare and high-value**. The cost of one bad proactive moment is higher than the value of three good ones, because trust collapses asymmetrically.
 
 ## Success criteria (concrete)
-- No more than 4 proactive utterances per day, ever.
-- A "quiet hours" window is respected absolutely.
-- Snooze/disable surface visible within 2 clicks.
-- A new user can use KIBO for a week without feeling interrupted once.
+- No more than 4 non-explicit proactive utterances per day.
+- Quiet hours are respected for all non-explicit proactive events.
+- Snooze/disable surface is visible within 2 clicks.
+- A new user can opt into proactivity during onboarding/settings instead of receiving it by default.
 
 ## Failure mode
 Proactivity that feels like notifications. Users disable notifications for a reason. KIBO loses if it joins the noise.
@@ -304,7 +304,7 @@ The project surfaces should make this feel like something that could ship to a s
 - Configuration system with single source of truth. ✅
 
 ## Status
-🟡 Partial. Chat and clip done. Settings UI for memory and personality not built.
+Partial but improved. Chat, clip, Settings, Memory, Data, Voice, proactivity controls, diagnostics export, and tray access exist. Remaining gaps: full diagnostics UI, full data lifecycle/export/import/reset, polished provider dashboards, and distribution.
 
 ## Why this matters
 A serious viewer judges completeness in 30 seconds. They look for: consistent design language, predictable controls, settings that exist where expected, and graceful failure.
@@ -330,7 +330,7 @@ This is the layer that makes a senior engineer pause.
 - Logging with rotation; diagnostics command in tray.
 
 ## Status
-🟡 Provider abstraction and fallbacks complete. Mock provider, lock file, and diagnostics are gaps.
+🟡 Provider abstraction and fallbacks complete. Mock provider, lock file, rotating logs, and diagnostics export exist. Remaining gaps: packaged diagnostics workflow, full data lifecycle, installer, and auto-update.
 
 ## What strong people look for
 - Extensibility (can I plug in my own LLM? yes).

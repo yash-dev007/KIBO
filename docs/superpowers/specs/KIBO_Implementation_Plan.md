@@ -2,7 +2,7 @@
 
 Source analyzed: `docs/superpowers/specs/KIBO_Build_Path.md`
 Repo baseline checked: 2026-04-29
-Test baseline: `pytest tests/ -q` -> 85 passed
+Test baseline: `pytest tests/ -q` -> full suite passing in current repo
 
 This plan turns the build-path manifesto into an execution sequence from current v5 code to a product-grade release. It is intentionally ordered around trust, retention, and coherence, not around adding the most features.
 
@@ -14,16 +14,16 @@ KIBO is past the "can this work?" stage. The desktop pet, animation engine, voic
 
 Important repo observations:
 
-- `src/system/proactive_engine.py` exists, but it is closer to a rule-based notification system than the rare, high-trust proactive companion described in the build path.
-- `src/system/notification_router.py` has cooldowns and quiet hours, but it does not enforce a global daily cap, per-day one-shot rules, snooze, or "quiet hours are absolute" for all proactive behavior.
-- `src/ui/settings_window.py` has general, AI, notification, and appearance tabs, plus one-click memory clearing. It does not yet provide memory browsing, editing, deleting individual facts, or confidence/source review.
+- `src/system/proactive_engine.py`, `src/system/proactive_policy.py`, and `src/system/notification_router.py` now provide guarded proactivity with persisted state, daily cap, quiet hours, cooldowns, snooze, disable controls, and tests. Explicit reminder creation remains future work.
+- `src/ui/settings_window.py` now includes Memory, Data, Voice, notification/proactivity controls, provider status refresh, reset controls, and diagnostics export. Full data lifecycle and richer diagnostics UI remain future work.
+- Memory browsing, editing, deleting individual facts, opening the vault, and rebuilding the index are implemented. Confidence/source review remains future work.
 - `src/ai/memory_store.py` already writes Obsidian-compatible Markdown memories and maintains a provider index. This is a strong foundation; the missing product layer is in-app transparency.
 - `main.py` already has a `QLockFile` single-instance lock, so the build-path item "single-instance lock file" is done even though the document lists it as a gap.
-- `config.json` currently has `"proactive_enabled": false`, while `DEFAULT_CONFIG` has it enabled. Treat public/default behavior explicitly before launch.
-- README and the build-path spec disagree on test count and privacy framing. These docs need to be reconciled before distribution.
+- Public defaults are now opt-in for proactivity in `DEFAULT_CONFIG`; first-run onboarding/settings can enable it explicitly.
+- README, build-path, and privacy framing should still receive a final release pass before distribution.
 - `docs/CREATE_CHARACTER.md` claims PNG fallback and uses some `actions/` paths, while `src/ui/animation_engine.py` is WebM-only and `Brain` resolves `action/` paths. The asset docs and runtime need to be reconciled before inviting custom skins.
-- `VoiceListener` may load silero-vad through `torch.hub`, which can trigger network access/cache behavior at runtime. That is incompatible with a predictable offline demo unless documented, disabled, or pre-bundled.
-- `HotkeyThread` is created from initial config and is not wired to settings changes. Changing hotkeys in Settings may require restart unless live rebind support is added and made explicit.
+- `VoiceListener` defaults to offline-safe RMS VAD; `silero_local` is explicit. Voice warm-up and test voice controls are wired.
+- `HotkeyThread` tracks its own hooks and supports live rebind from Settings changes.
 - `TaskRunner` exists and can run background LLM tasks against Ollama. It needs a product/safety boundary before any launch messaging suggests "agentic" behavior.
 - Google Calendar stores OAuth token material under `~/.kibo`. Users need a visible connect/disconnect/revoke surface, not just file placement.
 

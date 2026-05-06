@@ -68,7 +68,7 @@ RULES: list[ProactiveRule] = [
         type="meeting-reminder",
         condition=lambda ctx: 0 < ctx.next_meeting_minutes <= 30,
         message=lambda ctx: f"Meeting in {ctx.next_meeting_minutes} min!",
-        priority="high",
+        priority="medium",
     ),
 ]
 
@@ -185,6 +185,16 @@ class ProactiveEngine(QObject):
             cpu_percent=self._cpu_percent,
             app_open_minutes=app_open_mins,
         )
+
+        if self._config.get("demo_mode", False):
+            demo_idle = int(self._config.get("demo_proactive_idle_minutes", 1))
+            if ctx.idle_minutes >= demo_idle:
+                self.proactive_notification.emit(
+                    "idle-checkin",
+                    "Quiet stretch detected. I'm still here when you want me.",
+                    "low",
+                )
+                return
 
         for rule in RULES:
             if rule.condition(ctx):

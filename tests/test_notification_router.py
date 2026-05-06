@@ -1,3 +1,4 @@
+import dataclasses
 import pytest
 from datetime import datetime, timedelta
 from src.system.notification_router import NotificationRouter
@@ -37,7 +38,8 @@ def test_notification_router(tmp_path, monkeypatch):
     assert res is False
     assert len(approved) == 1
     
-    # cpu-panic should bypass quiet hours anyway, but here it's not quiet hours
+    router._state = dataclasses.replace(router._state, last_utterance_ts=0)
+    # cpu-panic is not quiet-hours blocked here and no longer has a recent global interval.
     res = router.route("cpu-panic", "Panic!", "medium")
     assert res is True
     assert len(approved) == 2
@@ -65,8 +67,10 @@ def test_quiet_hours(tmp_path, monkeypatch):
     # Low priority blocked by quiet hours
     assert not router.route("morning-greeting", "Hello", "low")
 
-    # High priority bypasses quiet hours
-    assert router.route("meeting-reminder", "Meeting!", "high")
+    # Non-explicit high priority still respects quiet hours
+    assert not router.route("meeting-reminder", "Meeting!", "high")
+    # Explicit user reminders may bypass quiet hours when marked urgent
+    assert router.route("reminder", "Reminder!", "high", explicit_reminder=True, bypass_cap=True)
 
 
 def _make_router(tmp_path, monkeypatch, hour: int = 12, config_overrides: dict = None):

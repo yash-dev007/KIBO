@@ -45,11 +45,12 @@ class ProactivePolicy:
     ) -> ProactiveDecision:
         priority = event.source_data.get("priority", "low")
         bypass_cap: bool = bool(event.source_data.get("bypass_cap", False))
+        explicit_reminder: bool = bool(event.source_data.get("explicit_reminder", False))
 
         if not config.get("proactive_enabled", True):
             return ProactiveDecision(approved=False, reason="proactive_disabled", event=event)
 
-        if priority != "high" and not bypass_cap:
+        if not explicit_reminder:
             if _is_quiet_hours(clock, config):
                 return ProactiveDecision(approved=False, reason="quiet_hours", event=event)
 
@@ -65,7 +66,7 @@ class ProactivePolicy:
         if not notification_types.get(event.type, True):
             return ProactiveDecision(approved=False, reason="category_disabled", event=event)
 
-        if priority == "low" and not bypass_cap:
+        if not explicit_reminder and not bypass_cap:
             current_date = clock.date()
             count = state.daily_utterance_count if state.daily_utterance_date == current_date else 0
             if count >= DAILY_CAP:

@@ -5,7 +5,7 @@
     "ollama_base_url": "http://localhost:11434",
     "ollama_model": "llama3.2:3b",
     "ollama_timeout_s": 60.0,
-    "llm_provider": "auto",
+    "llm_provider": "mock",
     "groq_api_key_env": "GROQ_API_KEY",
     "groq_model": "llama-3.3-70b-versatile",
     "groq_timeout_s": 30.0,
@@ -48,7 +48,7 @@
     "memory_provider": "auto",
     "memory_top_k": 5,
     "memory_extraction_inline": true,
-    "proactive_enabled": false,
+    "proactive_enabled": true,
     "quiet_hours_start": 22,
     "quiet_hours_end": 7,
     "notification_types": {
@@ -63,5 +63,9 @@
     },
     "calendar_provider": "none",
     "calendar_lookahead_minutes": 60,
-    "clip_hotkey": "ctrl+alt+k"
+    "clip_hotkey": "ctrl+alt+k",
+    "personality_version": "1.0",
+    "safety_version": "1.0",
+    "first_run_completed": true,
+    "onboarding_version": "1.0"
 }

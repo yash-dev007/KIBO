@@ -1,11 +1,15 @@
 """
 voice_listener.py — Record audio after hotkey, transcribe with faster-whisper.
 
-Endpointing:
-  - silero-vad (when stt_use_vad=true and the package is installed) for
-    accurate end-of-speech detection — usually 200-400ms after the user
-    stops talking.
-  - Falls back to RMS-based silence detection when VAD isn't available.
+Endpointing modes (`stt_vad_provider`):
+  - "off"           — no endpointing, record until max_seconds.
+  - "rms"           — RMS amplitude check; default, fully offline, no extra deps.
+  - "silero_local"  — load silero-vad via torch.hub. NEVER chosen automatically;
+                      requires explicit user consent because torch.hub fetches
+                      the model from the network on first use.
+
+Legacy `stt_use_vad` (bool) is honoured for back-compat: True maps to
+"silero_local" only when no explicit `stt_vad_provider` is configured.
 
 Default whisper model: base.en (more accurate than tiny.en, still
 fast on CPU). Override via config["stt_model"] / config["whisper_model"].
@@ -27,12 +31,35 @@ SAMPLE_RATE = 16000  # faster-whisper expects 16kHz
 CHANNELS = 1
 VAD_FRAME_MS = 32  # silero-vad accepts 256/512/768 samples at 16kHz; 512 = 32ms
 
+VALID_VAD_PROVIDERS = ("off", "rms", "silero_local")
+
+
+def _resolve_vad_provider(config: dict) -> str:
+    """Pick a VAD provider from config, honouring the legacy `stt_use_vad` flag.
+
+    Resolution order:
+      1. `stt_vad_provider` set explicitly to one of VALID_VAD_PROVIDERS → use it.
+      2. Legacy `stt_use_vad` is True and no explicit provider → "silero_local".
+      3. Legacy `stt_use_vad` is False and no explicit provider → "rms".
+      4. Default → "rms" (offline-safe).
+    """
+    explicit = config.get("stt_vad_provider")
+    if isinstance(explicit, str) and explicit in VALID_VAD_PROVIDERS:
+        return explicit
+
+    legacy = config.get("stt_use_vad")
+    if isinstance(legacy, bool):
+        return "silero_local" if legacy else "rms"
+
+    return "rms"
+
 
 class VoiceListener(QObject):
     """Records audio on demand and emits transcribed text."""
 
     recording_started = Signal()
     transcript_ready = Signal(str)
+    no_speech_detected = Signal()
     error_occurred = Signal(str)
 
     def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
@@ -43,9 +70,11 @@ class VoiceListener(QObject):
         self._is_recording = False
         self._lock = threading.Lock()
 
-        self._use_vad = bool(config.get("stt_use_vad", True))
+        self._vad_provider = _resolve_vad_provider(config)
+        self._use_vad = self._vad_provider == "silero_local"
         self._vad_threshold = float(config.get("stt_vad_threshold", 0.5))
         self._min_silence_ms = int(config.get("stt_min_silence_ms", 600))
+        self._input_device = config.get("audio_input_device")  # None = system default
 
     # ── Lazy loaders ────────────────────────────────────────────────────
 
@@ -70,7 +99,9 @@ class VoiceListener(QObject):
     def _load_vad(self) -> bool:
         if self._vad is not None:
             return True
-        if not self._use_vad:
+        # Only "silero_local" triggers a torch.hub fetch — every other mode
+        # (off, rms) stays fully offline and does not load anything.
+        if self._vad_provider != "silero_local":
             return False
         try:
             import torch
@@ -86,8 +117,28 @@ class VoiceListener(QObject):
             return True
         except Exception as exc:
             logger.warning("silero-vad unavailable (%s); using RMS fallback.", exc)
+            self._vad_provider = "rms"
             self._use_vad = False
             return False
+
+    @Slot()
+    def warm_up(self) -> None:
+        """Pre-load Whisper (and VAD if configured) on a quiet thread.
+
+        Called shortly after first launch so the first recording does not
+        pay the model-load cost at the moment the user expects speed.
+        Failures are logged but not surfaced — warm-up is best-effort.
+        """
+        if self._whisper is None:
+            try:
+                self._load_whisper()
+            except Exception as exc:
+                logger.debug("Whisper warm-up failed: %s", exc)
+        if self._vad_provider == "silero_local" and self._vad is None:
+            try:
+                self._load_vad()
+            except Exception as exc:
+                logger.debug("VAD warm-up failed: %s", exc)
 
     # ── Slot ────────────────────────────────────────────────────────────
 
@@ -135,6 +186,7 @@ class VoiceListener(QObject):
                 channels=CHANNELS,
                 dtype="float32",
                 blocksize=frame_samples,
+                device=self._input_device,
             ) as stream:
                 while total < max_frames:
                     chunk, _ = stream.read(frame_samples)
@@ -193,6 +245,9 @@ class VoiceListener(QObject):
             if text:
                 self.transcript_ready.emit(text)
             else:
+                # Distinct signal so the UI can render a friendly "I didn't
+                # catch that — try again?" state instead of a generic error.
+                self.no_speech_detected.emit()
                 self.error_occurred.emit("No speech detected.")
         except Exception as exc:
             logger.error("Transcription error: %s", exc)
@@ -204,6 +259,7 @@ class VoiceThread(QThread):
 
     recording_started = Signal()
     transcript_ready = Signal(str)
+    no_speech_detected = Signal()
     error_occurred = Signal(str)
 
     def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
@@ -212,6 +268,7 @@ class VoiceThread(QThread):
         self._listener.moveToThread(self)
         self._listener.recording_started.connect(self.recording_started)
         self._listener.transcript_ready.connect(self.transcript_ready)
+        self._listener.no_speech_detected.connect(self.no_speech_detected)
         self._listener.error_occurred.connect(self.error_occurred)
 
     def run(self) -> None:
@@ -221,6 +278,9 @@ class VoiceThread(QThread):
         QMetaObject.invokeMethod(
             self._listener, "on_hotkey_pressed", Qt.QueuedConnection
         )
+
+    def warm_up(self) -> None:
+        QMetaObject.invokeMethod(self._listener, "warm_up", Qt.QueuedConnection)
 
     def stop(self) -> None:
         self.quit()

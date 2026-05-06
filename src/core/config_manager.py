@@ -80,8 +80,12 @@ DEFAULT_CONFIG: dict = {
     "whisper_model": "tiny.en",
     "stt_model": "base.en",
     "stt_use_vad": True,
+    "stt_vad_provider": "rms",  # "off" | "rms" | "silero_local" — silero requires consent
     "stt_vad_threshold": 0.5,
     "stt_min_silence_ms": 600,
+    "audio_input_device": None,  # None = system default; int or device-name string
+    "audio_output_device": None,
+    "voice_warmup_on_launch": True,
     "opaque_fallback": False,
     "buddy_skin": "skales",
     "idle_action_interval_min_s": 30,
@@ -92,7 +96,7 @@ DEFAULT_CONFIG: dict = {
     "memory_provider": "auto",
     "memory_top_k": 5,
     "memory_extraction_inline": True,
-    "proactive_enabled": True,
+    "proactive_enabled": False,
     "quiet_hours_start": 22,
     "quiet_hours_end": 7,
     "notification_types": {
@@ -108,6 +112,12 @@ DEFAULT_CONFIG: dict = {
     "calendar_provider": "none",
     "calendar_lookahead_minutes": 60,
     "clip_hotkey": "ctrl+alt+k",
+    "demo_mode": False,
+    "demo_llm_responses": ["Mock response."],
+    "demo_llm_delay_ms": 0,
+    "demo_proactive_idle_minutes": 1,
+    "demo_seed_memory": "",
+    "diagnostics_include_memories": False,
     "personality_version": "1.0",
     "safety_version": "1.0",
     "first_run_completed": False,
@@ -182,7 +192,8 @@ def _validate(cfg: dict) -> None:
             logger.warning("'%s' must be a number. Resetting to %s.", float_key, default_val)
             cfg[float_key] = default_val
 
-    for bool_key in ("stt_use_vad", "memory_extraction_inline"):
+    for bool_key in ("stt_use_vad", "memory_extraction_inline", "demo_mode",
+                     "diagnostics_include_memories", "proactive_enabled"):
         if not isinstance(cfg.get(bool_key), bool):
             default_val = DEFAULT_CONFIG[bool_key]
             logger.warning("'%s' must be a bool. Resetting to %s.", bool_key, default_val)

@@ -16,6 +16,8 @@ class TrayManager(QObject):
     show_about = Signal()
     quit_requested = Signal()
     reset_position = Signal()
+    snooze_proactivity = Signal()
+    disable_proactivity = Signal()
 
     def __init__(self, config: dict, app: QApplication) -> None:
         super().__init__()
@@ -32,6 +34,20 @@ class TrayManager(QObject):
         self._toggle_chat_action = QAction("Open Chat", self)
         self._toggle_chat_action.triggered.connect(self._on_toggle_chat)
         self._menu.addAction(self._toggle_chat_action)
+
+        self._settings_action = QAction("Settings", self)
+        self._settings_action.triggered.connect(self.show_settings.emit)
+        self._menu.addAction(self._settings_action)
+
+        self._menu.addSeparator()
+
+        self._snooze_proactivity_action = QAction("Snooze Proactivity 1 Hour", self)
+        self._snooze_proactivity_action.triggered.connect(self.snooze_proactivity.emit)
+        self._menu.addAction(self._snooze_proactivity_action)
+
+        self._disable_proactivity_action = QAction("Disable Proactivity", self)
+        self._disable_proactivity_action.triggered.connect(self.disable_proactivity.emit)
+        self._menu.addAction(self._disable_proactivity_action)
 
         self._menu.addSeparator()
 

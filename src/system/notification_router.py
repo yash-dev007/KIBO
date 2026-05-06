@@ -89,9 +89,24 @@ class NotificationRouter(QObject):
 
     # ── routing ───────────────────────────────────────────────────────────────
 
-    def route(self, notification_type: str, message: str, priority: str = "low") -> bool:
+    def route(
+        self,
+        notification_type: str,
+        message: str,
+        priority: str = "low",
+        *,
+        explicit_reminder: bool = False,
+        bypass_cap: bool = False,
+    ) -> bool:
         now = datetime.datetime.now()
-        event = ProactiveEvent(type=notification_type, source_data={"priority": priority})
+        event = ProactiveEvent(
+            type=notification_type,
+            source_data={
+                "priority": priority,
+                "explicit_reminder": explicit_reminder,
+                "bypass_cap": bypass_cap,
+            },
+        )
         decision = self._policy.evaluate(event, self._state, self._config, clock=now)
 
         if not decision.approved:
@@ -100,7 +115,7 @@ class NotificationRouter(QObject):
         now_ts = int(now.timestamp())
         new_fired = {**self._state.per_rule_last_fired, notification_type: now_ts}
 
-        if priority == "low":
+        if not explicit_reminder and not bypass_cap:
             current_date = now.date()
             count = (
                 self._state.daily_utterance_count

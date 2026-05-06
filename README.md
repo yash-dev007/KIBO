@@ -15,7 +15,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=1a1a1a)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?style=flat-square&labelColor=1a1a1a)](https://doc.qt.io/qtforpython/)
 [![LLM: Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Ollama-F54F29?style=flat-square&labelColor=1a1a1a)](https://console.groq.com)
-[![Tests](https://img.shields.io/badge/tests-230%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
+[![Tests](https://img.shields.io/badge/tests-313%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
 
 <br/>
 
@@ -35,7 +35,7 @@
 | **TTS** | Piper neural (streaming, sentence-level) | pyttsx3 / browser |
 | **Memory** | Vector RAG (sqlite-vec + bge-small) | Session-only |
 | **Rendering** | VP9 alpha WebM via WMF — zero CPU overhead | PNG sequences or browser canvas |
-| **Privacy** | Fully local (Groq is opt-in cloud) | Cloud-dependent |
+| **Privacy** | Cloud-fast when configured, locally capable by provider choice | Cloud-dependent |
 | **Footprint** | < 2 % CPU at idle | — |
 | **Proactivity** | Policy-gated with daily cap, quiet hours, snooze | Push-only |
 | **Onboarding** | Guided first-run wizard with live provider health checks | Manual config file |
@@ -46,7 +46,7 @@
 
 ### Voice & AI
 
-- **Push-to-talk** (`Ctrl+K`) with faster-whisper `base.en` + silero-vad endpointing
+- **Push-to-talk** (`Ctrl+K`) with faster-whisper `base.en` + offline-safe RMS endpointing by default; explicit `silero_local` is available when configured
 - **Streaming sentence → TTS pipeline** — Piper neural audio starts playing while the LLM is still generating
 - **Interruptible voice loop** — pressing push-to-talk while KIBO is speaking cancels the active LLM stream, stops TTS, and drops stale queued speech
 - **Groq cloud LLM** (`llama-3.3-70b-versatile`, ~6 000 tok/s free tier) with automatic Ollama fallback
@@ -57,7 +57,7 @@
 
 - **Vector RAG** via sqlite-vec + fastembed (bge-small-en-v1.5, ~30 MB). Semantic kNN — *"what's my favourite drink?"* finds *"user likes espresso"* without keyword overlap.
 - **Obsidian-compatible vault** — every fact is also written to `~/.kibo/vault/memories/*.md`
-- **One-click clear** from the Settings window
+- **Memory transparency UI** in Settings: list, search, edit, delete, clear all, open vault, and rebuild index
 - **Index-safe cleanup** — clearing memory and retention-cap evictions also purge provider indexes
 - Migration: existing vault Markdown files are re-embedded on first run, no data lost
 
@@ -69,11 +69,13 @@
 
 ### First-run Onboarding
 
-- **4-page guided wizard** launches automatically on first start
+- **6-page guided wizard** launches automatically on first start
 - Page 1 — Welcome: introduces KIBO's capabilities and data model
 - Page 2 — Provider: choose Groq cloud, Ollama local, or Mock demo mode; live connection test runs `provider_health` checks before you leave the page
-- Page 3 — Privacy: explicit opt-in checkboxes for memory and proactive features; shows the `~/.kibo` data path
-- Page 4 — Finish: confirms setup; explains tray access
+- Page 3 - Voice & audio: checks microphone and Piper status and explains fallback behavior
+- Page 4 - Privacy: explicit opt-in checkboxes for memory and proactive features; shows the `~/.kibo` data path
+- Page 5 - Hotkeys: shows talk and clip shortcuts
+- Page 6 - Finish: confirms setup; explains tray access
 - Choices are persisted to `config.json`; `first_run_completed` is set to `True` on exit
 
 ### Proactivity Engine v1
@@ -81,10 +83,10 @@
 KIBO initiates conversation only when it has earned the right. Every proactive message passes through a structured policy layer before reaching you.
 
 **Delivery rules:**
-- Maximum **4 low-priority utterances per calendar day**
-- Minimum **45 minutes between low-priority utterances**
+- Maximum **4 non-explicit proactive utterances per calendar day**
+- Minimum **45 minutes between non-explicit proactive utterances**
 - **Quiet hours** (default 22:00–07:00) block all non-explicit messages
-- **Explicit reminders** bypass the daily cap and quiet hours (unless marked normal)
+- **Explicit urgent reminders** have a policy bypass path; reminder creation UI is future work
 
 **Trigger set:**
 | Trigger | Condition | Priority |
@@ -94,7 +96,7 @@ KIBO initiates conversation only when it has earned the right. Every proactive m
 | End-of-day note | 17:00–20:00, ≥ 1 task completed | Low |
 | Battery low | Below 20 % (once per discharge window) | Medium |
 | CPU stress | CPU > 90 % (5-min cooldown) | Medium |
-| Meeting reminder | Next event ≤ 30 min away | High |
+| Meeting reminder | Next event <= 30 min away | Medium |
 
 **User controls (two clicks from the tray):**
 - **Snooze 1 hour** — silences all proactive output until the timer expires
@@ -111,6 +113,14 @@ KIBO initiates conversation only when it has earned the right. Every proactive m
 - Reacts to CPU load, battery level, and idle time
 - Google Calendar integration for meeting reminders
 - All notification categories are individually togglable
+
+### Diagnostics & Demo Resilience
+
+- **Mock LLM and TTS providers** for deterministic no-network demos and tests
+- **Configurable mock responses** through `demo_llm_responses` and `demo_llm_delay_ms`
+- **Diagnostics export** writes redacted JSON under `~/.kibo/diagnostics/`
+- **Rotating logs** under `~/.kibo/logs/`
+- **Provider health checks** for Groq, Ollama, Piper, microphone, audio output, and hotkeys
 
 ---
 
@@ -169,11 +179,13 @@ curl -L -o models/piper/en_US-amy-medium.onnx.json \
 
 > **No Piper model?** Falls back to pyttsx3 automatically. Nothing breaks.
 
-### 4. *(Optional)* Better voice endpointing
+### 4. *(Optional)* Silero voice endpointing
 
 ```bash
 pip install torch torchaudio   # enables silero-vad end-of-speech detection
 ```
+
+Then set `stt_vad_provider` to `"silero_local"` in Settings or `config.json`. KIBO defaults to `"rms"` so normal runtime does not fetch VAD assets through `torch.hub`.
 
 ### 5. Run
 
@@ -227,13 +239,16 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 | `piper_model` | `"en_US-amy-medium"` | Piper voice model name |
 | `piper_models_dir` | `"models/piper"` | Directory containing `.onnx` + `.json` model files |
 | `stt_model` | `"base.en"` | Whisper model size |
-| `stt_use_vad` | `true` | Enable silero-vad endpointing |
+| `stt_vad_provider` | `"rms"` | `"rms"`, `"off"`, or explicit `"silero_local"` |
+| `audio_input_device` | `null` | Optional input device id/name |
+| `audio_output_device` | `null` | Optional output device id/name |
+| `voice_warmup_on_launch` | `true` | Preload Whisper after launch when AI is enabled |
 
 ### Memory
 
 | Key | Default | Description |
 |---|---|---|
-| `memory_provider` | `"auto"` | `"auto"`, `"vector"`, `"lexical"`, or `"mock"` |
+| `memory_provider` | `"auto"` | `"auto"`, `"vector"`, or `"lexical"` |
 | `memory_enabled` | `true` | Persist and retrieve long-term facts |
 | `memory_extraction_inline` | `true` | Extract memories via LLM tool calls mid-stream |
 | `memory_max_facts` | `200` | Retention cap; oldest facts evicted first |
@@ -243,7 +258,7 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 
 | Key | Default | Description |
 |---|---|---|
-| `proactive_enabled` | `true` | Master switch for all proactive messages |
+| `proactive_enabled` | `false` | Master switch for all proactive messages; opt-in by default |
 | `quiet_hours_start` | `22` | Hour (0–23) when quiet mode begins |
 | `quiet_hours_end` | `7` | Hour (0–23) when quiet mode ends |
 | `notification_types` | *(all true)* | Per-category on/off switches |
@@ -257,6 +272,16 @@ All settings live in `config.json` at the project root. Unknown keys are accepte
 | `safety_version` | `"1.0"` | Safety rule version |
 | `first_run_completed` | `false` | Set to `true` by the onboarding wizard |
 | `onboarding_version` | `"1.0"` | Onboarding schema version |
+
+### Demo & Diagnostics
+
+| Key | Default | Description |
+|---|---|---|
+| `demo_mode` | `false` | Enables demo-oriented shortcuts such as shortened idle proactivity |
+| `demo_llm_responses` | `["Mock response."]` | Scripted responses used by the mock LLM provider |
+| `demo_llm_delay_ms` | `0` | Optional per-chunk delay for mock LLM streaming |
+| `demo_proactive_idle_minutes` | `1` | Idle trigger threshold used only in demo mode |
+| `diagnostics_include_memories` | `false` | Include memory file names in diagnostics; contents are excluded by default |
 
 ---
 
@@ -272,7 +297,7 @@ All numbers on Ryzen 5 5600 + 16 GB RAM, Windows 11, Groq + Piper + base.en Whis
 | Memory embedding (fastembed bge-small) | ~15 ms / fact |
 | CPU at idle (animations running) | < 2 % |
 | Peak RAM | ~380 MB (models loaded) |
-| Test suite (230 passed, 3 skipped) | ~9 s |
+| Test suite (313 passed) | ~30 s |
 
 ---
 
@@ -290,13 +315,13 @@ src/
 │   ├── memory_store.py        # Fact storage — Markdown vault + provider index
 │   ├── sentence_buffer.py     # Token stream → sentences → TTS queue
 │   ├── tts_manager.py         # TTS queue + sentence-level streaming
-│   └── voice_listener.py      # Whisper STT + silero-vad endpointing
+│   └── voice_listener.py      # Whisper STT + RMS / optional silero endpointing
 ├── ui/
 │   ├── animation_engine.py    # VP9 alpha WebM player (WMF, zero CPU overhead)
 │   ├── clip_recorder.py       # 5-second ring buffer → animated WebP
-│   ├── onboarding_window.py   # First-run 4-page setup wizard
+│   ├── onboarding_window.py   # First-run 6-page setup wizard
 │   ├── chat_window.py         # Streaming chat transcript UI
-│   ├── settings_window.py     # 4-tab settings (General / AI / Notifications / Appearance)
+│   ├── settings_window.py     # Settings: General, Voice, AI, Notifications, Appearance, Memory, Data
 │   ├── tray_manager.py        # System tray icon + context menu (Snooze, Settings, Quit)
 │   └── ui_manager.py          # Transparent frameless window + speech bubble overlay
 ├── system/
@@ -305,6 +330,7 @@ src/
 │   ├── proactive_types.py     # ProactiveEvent, ProactiveDecision, ProactiveUtterance
 │   ├── notification_router.py # State machine — daily cap, snooze, cooldowns, persistence
 │   ├── provider_health.py     # Health checks for Groq, Piper, and Ollama
+│   ├── diagnostics.py         # Redacted diagnostics export
 │   ├── hotkey_listener.py     # Global hotkeys on a QThread
 │   ├── system_monitor.py      # CPU / battery / idle sensors
 │   ├── calendar_manager.py    # Google Calendar sync (opt-in)
@@ -357,10 +383,10 @@ uv run python -m pytest tests/ -q
 Current baseline:
 
 ```text
-230 passed, 3 skipped in 8.84s
+313 passed in 30.56s
 ```
 
-**230 passing tests** across 17 modules — unit, integration, and component coverage:
+**313 passing tests** across 22 modules - unit, integration, and component coverage:
 
 | Module | Coverage |
 |---|---|
@@ -381,6 +407,12 @@ Current baseline:
 | `test_onboarding_window.py` | Config persistence, provider choice, headless Qt safety |
 | `test_tts_manager.py` | Streaming TTS queue, interruption, stale chunk prevention |
 | `test_voice_listener.py` | Whisper/VAD loading, endpoint fallback, transcription behavior |
+| `test_hotkey_listener.py` | Hotkey registration, rebind, scoped cleanup |
+| `test_diagnostics.py` | Redaction, diagnostics export, memory-content exclusion |
+| `test_mock_provider.py` | Configurable mock LLM streaming |
+| `test_personality_regression.py` | Long-context personality and safety behavior |
+| `test_safety.py` | Self-harm, boundary, and prohibited-response guards |
+| `test_settings_window.py` | Settings tabs, reset controls, device parsing |
 
 ### Latency profiling
 
@@ -417,23 +449,24 @@ This bakes transparency offline. Runtime CPU cost: zero.
 
 ### Completed
 
-- [x] **Phase 0** — Personality contract, PromptBuilder, config versioning
-- [x] **Phase 0.5** — First-run onboarding wizard, provider health checks, settings improvements
-- [x] **Phase 1** — Proactivity Engine v1: daily cap, quiet hours, snooze, structured policy layer
-
-### In progress / up next
-
-- [x] **Phase 2** — Memory Transparency UI: inspect, search, edit, and delete individual facts from inside KIBO
-- [ ] **Phase 3** — Personality and Memory Coherence: stronger recall, consistent character voice across sessions
-- [x] **Phase 4.5A** — Voice/TTS interruption hardening: push-to-talk cancels active speech and queued chunks
-- [ ] **Phase 4** — Settings, Controls, and Error Surfaces: Open Data Folder, Reset Onboarding, hotkey conflict detection
-- [ ] **Phase 4.5** — Voice, Hotkey, and Device Reliability: audio device fallback, hotkey health signal
-- [ ] **Phase 5** — Engineering Credibility and Demo Resilience: demo mode, deterministic replay
+- [x] **Phase 0** - Personality contract, PromptBuilder, safety contract, doc alignment
+- [x] **Phase 0.5** - First-run onboarding wizard, provider health checks, settings improvements
+- [x] **Phase 1** - Proactivity Engine v1: daily cap, quiet hours, snooze, structured policy layer
+- [x] **Phase 2** - Memory Transparency UI: inspect, search, edit, and delete individual facts from inside KIBO
+- [x] **Phase 3** - Personality and Memory Coherence: prompt builder, memory humility, safety regression tests
+- [x] **Phase 4.5A** - Voice/TTS interruption hardening: push-to-talk cancels active speech and queued chunks
+- [x] **Phase 4** - Settings, Controls, and Error Surfaces: memory/data/voice controls, reset, diagnostics export
+- [x] **Phase 4.5** - Voice, Hotkey, and Device Reliability: safer VAD default, warm-up/test hooks, live hotkey rebind
+- [x] **Phase 5** - Engineering Credibility and Demo Resilience: mock providers, diagnostics export, rotating logs
 
 ### Future
 
+- [ ] Full data export/import/reset lifecycle
+- [ ] Reminder creation UI on top of the existing explicit-reminder policy path
+- [ ] Polished diagnostics workflow beyond JSON export
+- [ ] Windows installer and auto-update strategy
 - [ ] macOS support (`pynput` + `pywinctl` replacing Windows-only deps)
-- [ ] Custom character SDK — drop in your own VP9 alpha WebM sprite sheet
+- [ ] Custom character SDK - drop in your own VP9 alpha WebM sprite sheet
 - [ ] `pip install kibo` PyPI release
 - [ ] Opt-in telemetry for clip sharing and usage analytics
 
@@ -445,7 +478,7 @@ Issues and PRs are welcome. Please open an issue first for anything larger than 
 
 1. Fork → create a feature branch
 2. Write tests first (TDD: red → green → refactor)
-3. `uv run python -m pytest tests/ -q` must pass (all 230 passing tests)
+3. `uv run python -m pytest tests/ -q` must pass (all 313 passing tests)
 4. Submit a PR with a clear description of what changed and why
 
 ---

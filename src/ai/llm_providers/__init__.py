@@ -32,7 +32,7 @@ def get_provider(config: dict) -> LLMProvider:
     if choice == "mock":
         from .mock_provider import MockLLMProvider
         logger.info("LLM provider: Mock (deterministic, no network)")
-        return MockLLMProvider()
+        return MockLLMProvider(config=config)
 
     if choice in ("groq", "auto"):
         provider = _try_groq(config)

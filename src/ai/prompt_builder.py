@@ -34,6 +34,14 @@ class PromptBuilder:
         "you are software designed to be helpful, and that honesty is more respectful than pretending otherwise."
     )
 
+    MEMORY_HUMILITY_PROMPT: str = (
+        "About the remembered facts below:\n"
+        "- You may use them only when they are relevant to the user's current message.\n"
+        "- Do not claim certainty beyond what the memory text actually says.\n"
+        "- If you are unsure whether a memory still applies, ask before asserting it.\n"
+        "- Never invent, embellish, or merge facts that are not present in the list."
+    )
+
     def __init__(self, config: dict) -> None:
         self._config = config
 
@@ -64,6 +72,7 @@ class PromptBuilder:
 
         if memories:
             bullet_list = "\n".join(f"- {m}" for m in memories)
+            parts.append(self.MEMORY_HUMILITY_PROMPT)
             parts.append(f"Relevant memories:\n{bullet_list}")
 
         if extra_context:

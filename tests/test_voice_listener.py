@@ -31,6 +31,7 @@ def qt_app():
 BASE_CONFIG = {
     "stt_model": "base.en",
     "stt_use_vad": False,          # default to RMS so VAD isn't loaded
+    "stt_vad_provider": "rms",
     "stt_vad_threshold": 0.5,
     "stt_min_silence_ms": 600,
     "recording_max_seconds": 8,
@@ -59,6 +60,25 @@ def _speech_frame(n: int = 512, amplitude: float = 0.05) -> np.ndarray:
 
 
 class TestFrameSpeechDetection:
+    def test_explicit_rms_provider_does_not_load_silero(self, qt_app):
+        listener = _make_listener({**BASE_CONFIG, "stt_vad_provider": "rms", "stt_use_vad": True})
+        assert listener._vad_provider == "rms"
+        assert listener._use_vad is False
+        assert listener._load_vad() is False
+
+    def test_explicit_off_provider_disables_silero(self, qt_app):
+        listener = _make_listener({**BASE_CONFIG, "stt_vad_provider": "off", "stt_use_vad": True})
+        assert listener._vad_provider == "off"
+        assert listener._use_vad is False
+
+    def test_legacy_true_maps_to_silero_when_no_provider_key(self, qt_app):
+        cfg = dict(BASE_CONFIG)
+        cfg.pop("stt_vad_provider", None)
+        cfg["stt_use_vad"] = True
+        listener = _make_listener(cfg)
+        assert listener._vad_provider == "silero_local"
+        assert listener._use_vad is True
+
     def test_rms_below_threshold_is_not_speech(self, qt_app):
         listener = _make_listener()
         frame = _silent_frame()
@@ -136,11 +156,14 @@ class TestTranscription:
     def test_error_emitted_when_transcript_empty(self, qt_app):
         listener = self._make_with_whisper([""])
         errors: list[str] = []
+        no_speech: list[bool] = []
         listener.error_occurred.connect(errors.append)
+        listener.no_speech_detected.connect(lambda: no_speech.append(True))
 
         listener._transcribe(_speech_frame(n=16000))
 
         assert len(errors) == 1
+        assert no_speech == [True]
         assert "No speech detected" in errors[0]
 
     def test_error_emitted_when_all_segments_whitespace(self, qt_app):
@@ -187,6 +210,13 @@ class TestTranscription:
 
         mock_cls.assert_not_called()
         assert result is True
+
+    def test_warm_up_loads_whisper_without_recording(self, qt_app):
+        listener = _make_listener()
+        with patch.object(listener, "_load_whisper", return_value=True) as load_whisper:
+            listener.warm_up()
+        load_whisper.assert_called_once()
+        assert listener._is_recording is False
 
 
 # ---------------------------------------------------------------------------

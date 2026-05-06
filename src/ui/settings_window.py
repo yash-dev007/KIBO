@@ -18,6 +18,17 @@ from PySide6.QtWidgets import (
 )
 
 from src.core.config_manager import get_app_root, get_user_data_dir
+from src.core.config_manager import DEFAULT_CONFIG
+from src.system.diagnostics import export_diagnostics
+from src.system.provider_health import (
+    check_audio_output,
+    check_groq,
+    check_hotkey,
+    check_microphone,
+    check_ollama,
+    check_piper,
+    check_piper_package,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +36,9 @@ class SettingsWindow(QWidget):
     settings_changed = Signal(dict)
     closed = Signal()
     clear_memory_requested = Signal()
+    test_voice_requested = Signal()
+    voice_warmup_requested = Signal()
+    diagnostics_exported = Signal(str)
 
     @staticmethod
     def _discover_skins() -> list[str]:
@@ -126,6 +140,7 @@ class SettingsWindow(QWidget):
         """)
 
         self._init_general_tab()
+        self._init_voice_tab()
         self._init_ai_tab()
         self._init_notifications_tab()
         self._init_appearance_tab()
@@ -164,6 +179,16 @@ class SettingsWindow(QWidget):
         save_btn.clicked.connect(self._save_settings)
         footer_layout.addWidget(save_btn)
 
+        reset_tab_btn = QPushButton("Reset Tab")
+        reset_tab_btn.setFixedSize(90, 32)
+        reset_tab_btn.clicked.connect(self._reset_current_tab)
+        footer_layout.addWidget(reset_tab_btn)
+
+        reset_all_btn = QPushButton("Reset All")
+        reset_all_btn.setFixedSize(90, 32)
+        reset_all_btn.clicked.connect(self._reset_all_settings)
+        footer_layout.addWidget(reset_all_btn)
+
         layout.addWidget(footer)
 
     def _init_general_tab(self) -> None:
@@ -182,6 +207,44 @@ class SettingsWindow(QWidget):
         layout.addRow("Activation Hotkey:", self.f_hotkey)
 
         self.tabs.addTab(tab, "General")
+
+    def _init_voice_tab(self) -> None:
+        tab = QWidget()
+        layout = QFormLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        self.f_stt_vad_provider = QComboBox()
+        self.f_stt_vad_provider.addItems(["rms", "off", "silero_local"])
+        layout.addRow("VAD Provider:", self.f_stt_vad_provider)
+
+        self.f_audio_input_device = QLineEdit()
+        self.f_audio_input_device.setPlaceholderText("blank = system default")
+        layout.addRow("Input Device:", self.f_audio_input_device)
+
+        self.f_audio_output_device = QLineEdit()
+        self.f_audio_output_device.setPlaceholderText("blank = system default")
+        layout.addRow("Output Device:", self.f_audio_output_device)
+
+        self.f_voice_warmup = QCheckBox("Warm voice model on launch")
+        layout.addRow("", self.f_voice_warmup)
+
+        test_voice = QPushButton("Test Voice")
+        test_voice.clicked.connect(self.test_voice_requested.emit)
+        layout.addRow("", test_voice)
+
+        warm_voice = QPushButton("Warm Voice Now")
+        warm_voice.clicked.connect(self.voice_warmup_requested.emit)
+        layout.addRow("", warm_voice)
+
+        self._voice_status = QLabel("")
+        self._voice_status.setWordWrap(True)
+        layout.addRow("Status:", self._voice_status)
+
+        refresh = QPushButton("Refresh Voice Status")
+        refresh.clicked.connect(self._refresh_voice_status)
+        layout.addRow("", refresh)
+
+        self.tabs.addTab(tab, "Voice")
 
     def _init_ai_tab(self) -> None:
         tab = QWidget()
@@ -217,6 +280,14 @@ class SettingsWindow(QWidget):
         
         self.f_system_prompt = QPlainTextEdit()
         layout.addRow("System Prompt:", self.f_system_prompt)
+
+        self._provider_status = QLabel("")
+        self._provider_status.setWordWrap(True)
+        layout.addRow("Provider Status:", self._provider_status)
+
+        refresh_status = QPushButton("Refresh Provider Status")
+        refresh_status.clicked.connect(self._refresh_provider_status)
+        layout.addRow("", refresh_status)
 
         self.tabs.addTab(tab, "AI")
         
@@ -498,6 +569,11 @@ class SettingsWindow(QWidget):
         btn_open_folder.clicked.connect(lambda: self._open_data_folder(data_dir))
         layout.addWidget(btn_open_folder)
 
+        btn_export_diagnostics = QPushButton("Export Diagnostics")
+        btn_export_diagnostics.setCursor(Qt.PointingHandCursor)
+        btn_export_diagnostics.clicked.connect(self._on_export_diagnostics)
+        layout.addWidget(btn_export_diagnostics)
+
         btn_reset_onboarding = QPushButton("Reset Onboarding")
         btn_reset_onboarding.setCursor(Qt.PointingHandCursor)
         btn_reset_onboarding.setStyleSheet("""
@@ -515,6 +591,40 @@ class SettingsWindow(QWidget):
 
         layout.addStretch()
         self.tabs.addTab(tab, "Data")
+
+    def _refresh_voice_status(self) -> None:
+        mic = check_microphone()
+        output = check_audio_output()
+        piper_pkg = check_piper_package()
+        piper_model = self._current_config.get("piper_model", "")
+        piper_dir = self._current_config.get("piper_models_dir", "models/piper")
+        piper_path = str(Path(piper_dir) / f"{piper_model}.onnx") if piper_model else None
+        piper = check_piper(piper_path)
+        self._voice_status.setText(
+            f"Mic: {mic['reason']}\nOutput: {output['reason']}\n"
+            f"Piper package: {piper_pkg['reason']}\nPiper model: {piper['reason']}"
+        )
+
+    def _refresh_provider_status(self) -> None:
+        groq = check_groq(os.environ.get(self._current_config.get("groq_api_key_env", "GROQ_API_KEY")))
+        ollama = check_ollama(self._current_config.get("ollama_base_url", "http://localhost:11434"))
+        talk_hotkey = check_hotkey(self.f_hotkey.text().strip())
+        clip_hotkey = check_hotkey(self._current_config.get("clip_hotkey", "ctrl+alt+k"))
+        self._provider_status.setText(
+            f"Groq: {groq['reason']}\nOllama: {ollama['reason']}\n"
+            f"Talk hotkey: {talk_hotkey['reason']}\nClip hotkey: {clip_hotkey['reason']}"
+        )
+
+    def _on_export_diagnostics(self) -> None:
+        try:
+            path = export_diagnostics(
+                self._current_config,
+                include_memories=bool(self._current_config.get("diagnostics_include_memories", False)),
+            )
+            self.diagnostics_exported.emit(str(path))
+            QMessageBox.information(self, "Diagnostics", f"Diagnostics exported:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Diagnostics", f"Failed to export diagnostics:\n{exc}")
 
     def _open_data_folder(self, path: Path) -> None:
         try:
@@ -561,6 +671,11 @@ class SettingsWindow(QWidget):
         self.f_ollama_url.setText(cfg.get("ollama_base_url", ""))
         self.f_model.setText(cfg.get("ollama_model", ""))
         self.f_system_prompt.setPlainText(cfg.get("system_prompt", ""))
+
+        self.f_stt_vad_provider.setCurrentText(cfg.get("stt_vad_provider", "rms"))
+        self.f_audio_input_device.setText("" if cfg.get("audio_input_device") is None else str(cfg.get("audio_input_device")))
+        self.f_audio_output_device.setText("" if cfg.get("audio_output_device") is None else str(cfg.get("audio_output_device")))
+        self.f_voice_warmup.setChecked(cfg.get("voice_warmup_on_launch", True))
         
         self.f_proactive_enabled.setChecked(cfg.get("proactive_enabled", True))
         self.f_quiet_start.setValue(cfg.get("quiet_hours_start", 22))
@@ -575,6 +690,8 @@ class SettingsWindow(QWidget):
         self.f_frame_rate.setValue(cfg.get("frame_rate_ms", 150))
         self.f_bubble_timeout.setValue(cfg.get("speech_bubble_timeout_ms", 5000))
         self.f_opaque.setChecked(cfg.get("opaque_fallback", False))
+        self._refresh_voice_status()
+        self._refresh_provider_status()
 
         # Check for modifications
         self.f_buddy_skin.currentTextChanged.connect(self._check_restart_needed)
@@ -600,6 +717,11 @@ class SettingsWindow(QWidget):
         cfg["ollama_base_url"] = self.f_ollama_url.text().strip()
         cfg["ollama_model"] = self.f_model.text().strip()
         cfg["system_prompt"] = self.f_system_prompt.toPlainText()
+
+        cfg["stt_vad_provider"] = self.f_stt_vad_provider.currentText()
+        cfg["audio_input_device"] = self._parse_optional_device(self.f_audio_input_device.text())
+        cfg["audio_output_device"] = self._parse_optional_device(self.f_audio_output_device.text())
+        cfg["voice_warmup_on_launch"] = self.f_voice_warmup.isChecked()
         
         cfg["proactive_enabled"] = self.f_proactive_enabled.isChecked()
         cfg["quiet_hours_start"] = self.f_quiet_start.value()
@@ -636,6 +758,52 @@ class SettingsWindow(QWidget):
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
             QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
+
+    def _reset_current_tab(self) -> None:
+        tab_name = self.tabs.tabText(self.tabs.currentIndex())
+        if tab_name == "General":
+            self.f_pet_name.setText(DEFAULT_CONFIG["pet_name"])
+            self.f_buddy_skin.setCurrentText(DEFAULT_CONFIG["buddy_skin"])
+            self.f_hotkey.setText(DEFAULT_CONFIG["activation_hotkey"])
+        elif tab_name == "Voice":
+            self.f_stt_vad_provider.setCurrentText(DEFAULT_CONFIG["stt_vad_provider"])
+            self.f_audio_input_device.setText("")
+            self.f_audio_output_device.setText("")
+            self.f_voice_warmup.setChecked(DEFAULT_CONFIG["voice_warmup_on_launch"])
+        elif tab_name == "AI":
+            self.f_ai_enabled.setChecked(DEFAULT_CONFIG["ai_enabled"])
+            self.f_memory_enabled.setChecked(DEFAULT_CONFIG["memory_enabled"])
+            self.f_ollama_url.setText(DEFAULT_CONFIG["ollama_base_url"])
+            self.f_model.setText(DEFAULT_CONFIG["ollama_model"])
+            self.f_system_prompt.setPlainText(DEFAULT_CONFIG["system_prompt"])
+        elif tab_name == "Notifications":
+            self.f_proactive_enabled.setChecked(DEFAULT_CONFIG["proactive_enabled"])
+            self.f_quiet_start.setValue(DEFAULT_CONFIG["quiet_hours_start"])
+            self.f_quiet_end.setValue(DEFAULT_CONFIG["quiet_hours_end"])
+            for nt, cb in self.f_types.items():
+                cb.setChecked(DEFAULT_CONFIG["notification_types"].get(nt, True))
+        elif tab_name == "Appearance":
+            self.f_window_size.setValue(DEFAULT_CONFIG["window_size"][0])
+            self.f_frame_rate.setValue(DEFAULT_CONFIG["frame_rate_ms"])
+            self.f_bubble_timeout.setValue(DEFAULT_CONFIG["speech_bubble_timeout_ms"])
+            self.f_opaque.setChecked(DEFAULT_CONFIG["opaque_fallback"])
+
+    def _reset_all_settings(self) -> None:
+        preserved = {
+            "first_run_completed": self._current_config.get("first_run_completed", False),
+            "onboarding_version": self._current_config.get("onboarding_version", "1.0"),
+        }
+        self._current_config = {**DEFAULT_CONFIG, **preserved}
+        self._populate_fields()
+
+    @staticmethod
+    def _parse_optional_device(raw: str):
+        value = raw.strip()
+        if not value:
+            return None
+        if value.isdigit():
+            return int(value)
+        return value
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)

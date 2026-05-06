@@ -199,6 +199,8 @@ class UIManager(QWidget):
     animation_finished = Signal()
     pet_clicked = Signal()
     show_settings = Signal()
+    snooze_proactivity = Signal()
+    disable_proactivity = Signal()
     frame_captured = Signal(QPixmap)  # forwarded for ClipRecorder
 
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
@@ -449,6 +451,16 @@ class UIManager(QWidget):
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self.show_settings.emit)
         menu.addAction(settings_action)
+
+        menu.addSeparator()
+
+        snooze_action = QAction("Snooze Proactivity 1 Hour", self)
+        snooze_action.triggered.connect(self.snooze_proactivity.emit)
+        menu.addAction(snooze_action)
+
+        disable_proactivity_action = QAction("Disable Proactivity", self)
+        disable_proactivity_action.triggered.connect(self.disable_proactivity.emit)
+        menu.addAction(disable_proactivity_action)
 
         menu.addSeparator()
 
