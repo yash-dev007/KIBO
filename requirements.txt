@@ -41,3 +41,5 @@ pytest-cov>=5.0.0
 # Voice listener auto-detects torch and uses silero-vad if available.
 # Install separately if you want better endpointing:
 #   pip install torch torchaudio
+
+# --- END ---
