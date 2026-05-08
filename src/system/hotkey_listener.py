@@ -1,36 +1,30 @@
 """
 hotkey_listener.py — Global hotkey listener (default: Ctrl+K).
 
-Runs the keyboard library's blocking wait loop on a QThread so it never
-blocks the Qt event loop. Emits hotkey_pressed signal on the main thread
-via Qt's cross-thread signal mechanism.
+Runs the keyboard library's blocking wait on a daemon Thread so it never
+blocks the main thread. Emits EventBus events when registered hotkeys fire.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import threading
 
 import keyboard
-from PySide6.QtCore import QObject, QThread, Signal
 
 logger = logging.getLogger(__name__)
 
 
-class HotkeyListener(QObject):
-    """Lives on a QThread. Emits signals when registered hotkeys fire."""
+class HotkeyListener:
+    """Registers global hotkeys and emits EventBus events when they fire."""
 
-    hotkey_pressed = Signal()
-    clip_hotkey_pressed = Signal()
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
+    def __init__(self, config: dict, event_bus=None) -> None:
         self._hotkey = config.get("activation_hotkey", "ctrl+k")
         self._clip_hotkey = config.get("clip_hotkey", "ctrl+alt+k")
+        self._event_bus = event_bus
         self._running = False
 
     def start_listening(self) -> None:
-        """Called once the worker thread starts."""
         self._running = True
         logger.info(
             "HotkeyListener: registering '%s' (talk) and '%s' (clip).",
@@ -51,34 +45,28 @@ class HotkeyListener(QObject):
             pass
 
     def _on_hotkey(self) -> None:
-        if self._running:
+        if self._running and self._event_bus:
             logger.debug("Hotkey '%s' pressed.", self._hotkey)
-            self.hotkey_pressed.emit()
+            self._event_bus.emit("hotkey_pressed")
 
     def _on_clip_hotkey(self) -> None:
-        if self._running:
+        if self._running and self._event_bus:
             logger.debug("Clip hotkey '%s' pressed.", self._clip_hotkey)
-            self.clip_hotkey_pressed.emit()
+            self._event_bus.emit("clip_hotkey_pressed")
 
 
-class HotkeyThread(QThread):
-    """Convenience wrapper: owns HotkeyListener and runs it on this thread."""
+class HotkeyThread(threading.Thread):
+    """Daemon thread that owns a HotkeyListener and keeps it running."""
 
-    hotkey_pressed = Signal()
-    clip_hotkey_pressed = Signal()
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-        self._listener = HotkeyListener(config)
-        self._listener.moveToThread(self)
-        self._listener.hotkey_pressed.connect(self.hotkey_pressed)
-        self._listener.clip_hotkey_pressed.connect(self.clip_hotkey_pressed)
+    def __init__(self, config: dict, event_bus=None) -> None:
+        super().__init__(daemon=True)
+        self._listener = HotkeyListener(config, event_bus=event_bus)
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
         self._listener.start_listening()
-        self.exec()
+        self._stop_event.wait()
 
     def stop(self) -> None:
         self._listener.stop()
-        self.quit()
-        self.wait(2000)
+        self._stop_event.set()
