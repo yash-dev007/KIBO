@@ -1,7 +1,8 @@
 """
 main.py — KIBO Virtual Pet entry point.
 
-Wires all components together via Qt signals/slots and starts the event loop.
+Wires all components together via EventBus (backend) and Qt signals (UI),
+then starts the Qt event loop.
 
 AI is optional. Set "ai_enabled": false in config.json to run KIBO in
 system-monitor-only mode (no hotkey, no voice, no Ollama required).
@@ -16,10 +17,11 @@ from pathlib import Path
 # Force WMF backend to natively support VP9 WebM alpha videos provided by Web Media Extensions
 os.environ["QT_MEDIA_BACKEND"] = "windows"
 
-from PySide6.QtCore import Qt, QLockFile, QMetaObject, Q_ARG, QTimer
+from PySide6.QtCore import Qt, QLockFile, QTimer
 from PySide6.QtWidgets import QApplication
 
 from src.ai.brain import Brain
+from src.api.event_bus import EventBus
 from src.core.config_manager import load_config
 from src.system.system_monitor import SystemMonitor
 from src.ui.ui_manager import UIManager
@@ -37,6 +39,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def qt_safe(fn):
+    """Wrap fn so it runs on the Qt main thread via QTimer.singleShot(0)."""
+    def _wrapper(*args):
+        QTimer.singleShot(0, lambda: fn(*args))
+    return _wrapper
 
 
 def _sanitize_assistant_text(text: str) -> str:
@@ -62,7 +71,14 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    config = load_config()  # path resolved via get_app_root() in config_manager
+    config = load_config()
+
+    if not config.get("first_run_completed", False):
+        from src.ui.onboarding_window import OnboardingWindow
+        onboarding = OnboardingWindow(dict(config))
+        onboarding.exec()
+        config = load_config()
+
     ai_enabled = config.get("ai_enabled", True)
 
     logger.info("KIBO starting. Pet name: %s | AI: %s | Skin: %s",
@@ -70,50 +86,65 @@ def main() -> int:
                 "enabled" if ai_enabled else "disabled",
                 config.get("buddy_skin", "skales"))
 
-    # --- Core components (always created) ---
-    notification_router = NotificationRouter(config)
-    proactive_engine = ProactiveEngine(config, router=notification_router)
-    brain = Brain(config, router=notification_router)
-    system_monitor = SystemMonitor(config)
+    # ── EventBus (shared backbone) ────────────────────────────────────────
+    bus = EventBus()
+
+    # --- Core backend components ---
+    notification_router = NotificationRouter(config, event_bus=bus)
+    proactive_engine = ProactiveEngine(config, router=notification_router, event_bus=bus)
+    brain = Brain(config, router=notification_router, event_bus=bus)
+    system_monitor = SystemMonitor(config, event_bus=bus)
+    memory_store = MemoryStore(config, event_bus=bus)
+    calendar_manager = CalendarManager(config, event_bus=bus)
+
+    # --- Qt UI components (unchanged Qt objects) ---
     ui = UIManager(config)
     tray = TrayManager(config, app)
     chat_window = ChatWindow(config)
-    memory_store = MemoryStore(config)
     settings_window = SettingsWindow(config)
-    calendar_manager = CalendarManager(config)
 
-    # ── Core Wiring ───────────────────────────────────────────────────
-    system_monitor.sensor_update.connect(brain.on_sensor_update)
-    system_monitor.sensor_update.connect(proactive_engine.on_sensor_update)
-    brain.brain_output.connect(ui.on_brain_output)
-    
-    proactive_engine.proactive_notification.connect(notification_router.route)
-    notification_router.notification_approved.connect(lambda msg, _: ui.show_notification(msg))
-    
-    # Animation finished signal → Brain (handles INTRO→IDLE and ACTING→IDLE)
-    ui.animation_finished.connect(brain.on_animation_done)
+    # ── Backend EventBus wiring ───────────────────────────────────────────
+    bus.on("sensor_update", brain.on_sensor_update)
+    bus.on("sensor_update", proactive_engine.on_sensor_update)
+    bus.on("events_updated", proactive_engine.on_calendar_updated)
+    bus.on("task_completed", proactive_engine.on_task_completed)
+    bus.on("task_blocked", proactive_engine.on_task_blocked)
 
-    # ── Tray ──────────────────────────────────────────────────────────
+    # ── Backend → Qt UI bridge (qt_safe marshals to main thread) ─────────
+    bus.on("brain_output", qt_safe(ui.on_brain_output))
+    bus.on("notification_approved",
+           qt_safe(lambda msg, notif_type: ui.show_notification(msg)))
+    bus.on("proactive_notification",
+           qt_safe(lambda tp, msg, pri: notification_router.route(msg, tp)))
+
+    # ── Tray / Qt-UI connections (all on main thread, no qt_safe needed) ──
     tray.show_chat.connect(chat_window.show)
     tray.hide_chat.connect(chat_window.hide)
     tray.quit_requested.connect(app.quit)
     ui.quit_requested.connect(app.quit)
     chat_window.visibility_changed.connect(tray.set_chat_visible)
-    
+
     # Settings window
     ui.show_settings.connect(settings_window.show)
     settings_window.settings_changed.connect(ui.on_config_changed)
-    settings_window.settings_changed.connect(brain.on_config_changed)
-    settings_window.settings_changed.connect(system_monitor.on_config_changed)
-    settings_window.settings_changed.connect(notification_router.on_config_changed)
-    settings_window.settings_changed.connect(proactive_engine.on_config_changed)
+    settings_window.settings_changed.connect(
+        lambda cfg: brain.on_config_changed(cfg))
+    settings_window.settings_changed.connect(
+        lambda cfg: system_monitor.on_config_changed(cfg))
+    settings_window.settings_changed.connect(
+        lambda cfg: notification_router.on_config_changed(cfg))
+    settings_window.settings_changed.connect(
+        lambda cfg: proactive_engine.on_config_changed(cfg))
     settings_window.clear_memory_requested.connect(memory_store.clear_all_facts)
-    
+
     # Reset pet position + About from tray
     tray.reset_position.connect(ui.reset_position)
     tray.show_about.connect(ui.show_about)
 
-    # ── Pet click → Chat ──────────────────────────────────────────────
+    # Animation finished → Brain (pure-Python, no Qt needed)
+    ui.animation_finished.connect(brain.on_animation_done)
+
+    # Pet click → Chat + proactive
     ui.pet_clicked.connect(chat_window.toggle)
     ui.pet_clicked.connect(proactive_engine.update_last_interaction)
 
@@ -138,46 +169,39 @@ def main() -> int:
         from src.ai.voice_listener import VoiceThread
         from src.ai.sentence_buffer import SentenceBuffer
 
-        hotkey_thread = HotkeyThread(config)
-        voice_thread = VoiceThread(config)
-        ai_thread = AIThread(config, memory_store=memory_store)
-        tts_thread = TTSThread(config)
-        task_runner = TaskRunner(config, ai_client=ai_thread.client)
-        sentence_buffer = SentenceBuffer()
+        hotkey_thread = HotkeyThread(config, event_bus=bus)
+        voice_thread = VoiceThread(config, event_bus=bus)
+        ai_thread = AIThread(config, memory_store=memory_store, event_bus=bus)
+        tts_thread = TTSThread(config, event_bus=bus)
+        task_runner = TaskRunner(config, ai_client=ai_thread.client, event_bus=bus)
+        sentence_buffer = SentenceBuffer(event_bus=bus)
 
         # ── Mic button in chat → same flow as hardware hotkey ─────────────
         chat_window.mic_pressed.connect(brain.on_listening_started)
         chat_window.mic_pressed.connect(voice_thread.on_hotkey_pressed)
-        chat_window.mic_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
-        
+        chat_window.mic_pressed.connect(
+            lambda: tts_thread.manager.set_silent_mode(False))
+
         settings_window.settings_changed.connect(ai_thread.on_config_changed)
 
-        # ── Chat input → AI (queued, thread-safe) ─────────────────────────
+        # ── Chat text input → AI ──────────────────────────────────────────
         _is_text_chat = False
 
         def _handle_text_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = True
-            ai_thread.cancel_current()  # abort any in-flight stream before starting new one
+            ai_thread.cancel_current()
             tts_thread.manager.set_silent_mode(True)
-            brain.on_thinking_started()  # show THINKING animation during text chat
+            brain.on_thinking_started()
             proactive_engine.update_last_interaction()
-            QMetaObject.invokeMethod(
-                ai_thread.client, "send_query",
-                Qt.QueuedConnection,
-                Q_ARG(str, text),
-            )
+            ai_thread.send_query(text)
 
         def _handle_voice_query(text: str) -> None:
             nonlocal _is_text_chat
             _is_text_chat = False
             tts_thread.manager.set_silent_mode(False)
             brain.on_thinking_started()
-            QMetaObject.invokeMethod(
-                ai_thread.client, "send_query",
-                Qt.QueuedConnection,
-                Q_ARG(str, text),
-            )
+            ai_thread.send_query(text)
 
         def _on_response_done(text: str) -> None:
             clean_text = _sanitize_assistant_text(text)
@@ -185,61 +209,61 @@ def main() -> int:
                 brain.on_talking_started(clean_text)
             chat_window.on_response_done(clean_text)
             ui.on_response_done(clean_text)
-            # Flush any tail sentence to TTS; speech_done emits when drained.
             sentence_buffer.flush()
-            # Legacy fallback: if inline extraction is OFF, do the old async call.
             if not config.get("memory_extraction_inline", True):
                 QTimer.singleShot(0, lambda: memory_store.extract_facts_async(clean_text))
 
         chat_window.message_sent.connect(_handle_text_query)
 
-        # Hotkey -> Brain (listening) + VoiceThread (record)
-        hotkey_thread.hotkey_pressed.connect(brain.on_listening_started)
-        hotkey_thread.hotkey_pressed.connect(voice_thread.on_hotkey_pressed)
-        hotkey_thread.hotkey_pressed.connect(lambda: tts_thread.manager.set_silent_mode(False))
+        # ── Hotkey → Brain + Voice ─────────────────────────────────────────
+        bus.on("hotkey_pressed", qt_safe(brain.on_listening_started))
+        bus.on("hotkey_pressed", voice_thread.on_hotkey_pressed)
+        bus.on("hotkey_pressed",
+               qt_safe(lambda: tts_thread.manager.set_silent_mode(False)))
 
         # Clip hotkey → ClipRecorder
-        hotkey_thread.clip_hotkey_pressed.connect(clip_recorder.dump)
+        bus.on("clip_hotkey_pressed", qt_safe(clip_recorder.dump))
 
-        # Voice thread states -> UI
-        voice_thread.recording_started.connect(chat_window.show_listening_indicator)
-        voice_thread.transcript_ready.connect(chat_window.update_voice_transcript)
-        voice_thread.error_occurred.connect(chat_window.cancel_listening)
+        # ── Voice states → UI (qt_safe — voice runs on daemon thread) ─────
+        bus.on("recording_started",
+               qt_safe(chat_window.show_listening_indicator))
+        bus.on("transcript_ready",
+               qt_safe(chat_window.update_voice_transcript))
+        bus.on("error_occurred",
+               qt_safe(chat_window.cancel_listening))
 
-        # Voice transcript -> Brain (thinking) + AI (query)
-        voice_thread.transcript_ready.connect(_handle_voice_query)
-        voice_thread.error_occurred.connect(ui.on_ai_error)
-        voice_thread.error_occurred.connect(lambda _: brain.on_ai_done())
+        # Voice transcript → AI (thread-safe via AIThread queue)
+        bus.on("transcript_ready", _handle_voice_query)
+        bus.on("error_occurred", qt_safe(ui.on_ai_error))
+        bus.on("error_occurred", lambda _: brain.on_ai_done())
 
-        # ── AI → Chat + UI + Memory + TTS ────────────────────────────────────────────
-        ai_thread.response_chunk.connect(ui.on_response_chunk)
-        ai_thread.response_chunk.connect(chat_window.on_chunk)
+        # ── AI chunks → UI + sentence buffer ──────────────────────────────
+        bus.on("response_chunk", qt_safe(ui.on_response_chunk))
+        bus.on("response_chunk", qt_safe(chat_window.on_chunk))
+        bus.on("response_chunk", sentence_buffer.push)
 
-        # Streaming: token deltas → sentence buffer → TTS chunk-at-a-time.
-        # Voice replies stream; text-chat replies stay silent (set by silent_mode).
-        ai_thread.response_chunk.connect(sentence_buffer.push)
-        sentence_buffer.sentence_ready.connect(tts_thread.speak_chunk)
-        # When the buffer is flushed (end of reply), signal the TTS drain to finish.
-        sentence_buffer.flushed.connect(tts_thread.end_stream)
+        # Sentence buffer → TTS (thread-safe via TTSThread queue)
+        bus.on("sentence_ready", tts_thread.speak_chunk)
+        bus.on("flushed", lambda: tts_thread.end_stream())
 
-        ai_thread.response_done.connect(_on_response_done)
+        # AI response done → UI + brain
+        bus.on("response_done", qt_safe(_on_response_done))
 
-        # Inline memory: every `remember` tool-call from the LLM lands here.
-        ai_thread.memory_fact_extracted.connect(memory_store.add_fact_inline)
+        # Inline memory tool calls → store
+        bus.on("memory_fact_extracted", memory_store.add_fact_inline)
 
-        ai_thread.error_occurred.connect(ui.on_ai_error)
-        ai_thread.error_occurred.connect(chat_window.on_error)
-        ai_thread.error_occurred.connect(lambda _: brain.on_ai_done())
+        # AI errors → UI
+        bus.on("error_occurred", qt_safe(chat_window.on_error))
+        bus.on("error_occurred", lambda _: brain.on_ai_done())
 
-        # TTS done -> back to sensor-driven state
-        tts_thread.speech_done.connect(brain.on_ai_done)
-        
+        # TTS done → brain idle
+        bus.on("speech_done", brain.on_ai_done)
+
         # ── Task Runner ───────────────────────────────────────────────────
-        task_runner.task_completed.connect(proactive_engine.on_task_completed)
-        task_runner.task_blocked.connect(proactive_engine.on_task_blocked)
-        task_runner.task_blocked.connect(
-            lambda task: chat_window.show_approval_prompt(task) if task.get("error") == "awaiting_approval" else None
-        )
+        bus.on("task_blocked", qt_safe(
+            lambda task: chat_window.show_approval_prompt(task)
+            if task.get("error") == "awaiting_approval" else None
+        ))
         chat_window.task_approved.connect(task_runner.approve_task)
         chat_window.task_cancelled.connect(task_runner.cancel_task)
 
@@ -251,10 +275,8 @@ def main() -> int:
 
         logger.info("AI enabled. Press %s to talk to KIBO.", config["activation_hotkey"])
     else:
+        task_runner = TaskRunner(config, None, event_bus=bus)
         logger.info("AI disabled. KIBO will react to system state only.")
-
-    # ── Calendar → Proactive ──────────────────────────────────────────
-    calendar_manager.events_updated.connect(proactive_engine.on_calendar_updated)
 
     # --- Start core ---
     system_monitor.start()
@@ -263,7 +285,6 @@ def main() -> int:
     ui.place_on_screen()
     ui.show()
 
-    # Emit initial state (INTRO or IDLE) after UI is visible
     initial_output = brain.get_initial_output()
     ui.on_brain_output(initial_output)
 
