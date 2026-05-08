@@ -14,30 +14,26 @@ fast on CPU). Override via config["stt_model"] / config["whisper_model"].
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 from typing import Optional
 
 import numpy as np
 import sounddevice as sd
-from PySide6.QtCore import QMetaObject, QObject, QThread, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
-SAMPLE_RATE = 16000  # faster-whisper expects 16kHz
+SAMPLE_RATE = 16000
 CHANNELS = 1
-VAD_FRAME_MS = 32  # silero-vad accepts 256/512/768 samples at 16kHz; 512 = 32ms
+VAD_FRAME_MS = 32  # silero-vad accepts 512 samples at 16kHz (32ms)
 
 
-class VoiceListener(QObject):
-    """Records audio on demand and emits transcribed text."""
+class VoiceListener:
+    """Records audio on demand and emits EventBus events with transcribed text."""
 
-    recording_started = Signal()
-    transcript_ready = Signal(str)
-    error_occurred = Signal(str)
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
+    def __init__(self, config: dict, event_bus=None) -> None:
         self._config = config
+        self._event_bus = event_bus
         self._whisper = None
         self._vad = None
         self._is_recording = False
@@ -64,7 +60,8 @@ class VoiceListener(QObject):
             return True
         except Exception as exc:
             logger.error("Failed to load faster-whisper: %s", exc)
-            self.error_occurred.emit(f"Whisper load failed: {exc}")
+            if self._event_bus:
+                self._event_bus.emit("error_occurred", f"Whisper load failed: {exc}")
             return False
 
     def _load_vad(self) -> bool:
@@ -89,11 +86,9 @@ class VoiceListener(QObject):
             self._use_vad = False
             return False
 
-    # ── Slot ────────────────────────────────────────────────────────────
+    # ── Entry point ────────────────────────────────────────────────────
 
-    @Slot()
     def on_hotkey_pressed(self) -> None:
-        """Slot: start recording. Ignores if already recording."""
         with self._lock:
             if self._is_recording:
                 return
@@ -104,10 +99,10 @@ class VoiceListener(QObject):
                 self._is_recording = False
             return
 
-        # Best-effort VAD load — silently degrades to RMS if missing.
         self._load_vad()
 
-        self.recording_started.emit()
+        if self._event_bus:
+            self._event_bus.emit("recording_started")
         try:
             audio = self._record()
             if audio is not None and audio.size > 0:
@@ -153,7 +148,8 @@ class VoiceListener(QObject):
                         break
         except Exception as exc:
             logger.error("sounddevice error: %s", exc)
-            self.error_occurred.emit(f"Recording failed: {exc}")
+            if self._event_bus:
+                self._event_bus.emit("error_occurred", f"Recording failed: {exc}")
             return None
 
         if not audio_frames:
@@ -161,24 +157,18 @@ class VoiceListener(QObject):
         return np.concatenate(audio_frames, axis=0).flatten()
 
     def _frame_is_speech(self, frame: np.ndarray) -> bool:
-        """Decide if a single frame contains speech.
-
-        Uses silero-vad when available (high accuracy); otherwise falls
-        back to RMS amplitude check.
-        """
         if self._vad is not None:
             try:
                 import torch
 
                 tensor = torch.from_numpy(frame.astype(np.float32))
-                # silero-vad expects exactly 512 samples at 16kHz
                 if tensor.shape[0] < 512:
                     return False
                 prob = self._vad(tensor[:512], SAMPLE_RATE).item()
                 return prob >= self._vad_threshold
             except Exception as exc:
                 logger.debug("VAD error, switching to RMS: %s", exc)
-                self._vad = None  # disable for the rest of the session
+                self._vad = None
 
         rms = float(np.sqrt(np.mean(frame**2)))
         return rms >= 0.01
@@ -191,37 +181,40 @@ class VoiceListener(QObject):
             text = " ".join(seg.text.strip() for seg in segments).strip()
             logger.info("Transcribed: '%s'", text)
             if text:
-                self.transcript_ready.emit(text)
+                if self._event_bus:
+                    self._event_bus.emit("transcript_ready", text)
             else:
-                self.error_occurred.emit("No speech detected.")
+                if self._event_bus:
+                    self._event_bus.emit("error_occurred", "No speech detected.")
         except Exception as exc:
             logger.error("Transcription error: %s", exc)
-            self.error_occurred.emit(f"Transcription failed: {exc}")
+            if self._event_bus:
+                self._event_bus.emit("error_occurred", f"Transcription failed: {exc}")
 
 
-class VoiceThread(QThread):
-    """Convenience wrapper: owns VoiceListener and runs it on this thread."""
+class VoiceThread(threading.Thread):
+    """Daemon thread that owns a VoiceListener and processes hotkey requests via a queue."""
 
-    recording_started = Signal()
-    transcript_ready = Signal(str)
-    error_occurred = Signal(str)
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-        self._listener = VoiceListener(config)
-        self._listener.moveToThread(self)
-        self._listener.recording_started.connect(self.recording_started)
-        self._listener.transcript_ready.connect(self.transcript_ready)
-        self._listener.error_occurred.connect(self.error_occurred)
+    def __init__(self, config: dict, event_bus=None) -> None:
+        super().__init__(daemon=True)
+        self._listener = VoiceListener(config, event_bus=event_bus)
+        self._queue: queue.Queue = queue.Queue()
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
-        self.exec()
+        while not self._stop_event.is_set():
+            try:
+                task = self._queue.get(timeout=0.1)
+                try:
+                    if task == "hotkey_pressed":
+                        self._listener.on_hotkey_pressed()
+                finally:
+                    self._queue.task_done()
+            except queue.Empty:
+                continue
 
     def on_hotkey_pressed(self) -> None:
-        QMetaObject.invokeMethod(
-            self._listener, "on_hotkey_pressed", Qt.QueuedConnection
-        )
+        self._queue.put("hotkey_pressed")
 
     def stop(self) -> None:
-        self.quit()
-        self.wait(3000)
+        self._stop_event.set()
