@@ -129,3 +129,29 @@ class TestNewConfigKeys:
         cfg = load_config(path)
         assert cfg["idle_action_interval_min_s"] == 30
         assert cfg["idle_action_interval_max_s"] == 60
+
+
+class TestOnboardingConfigKeys:
+    def test_first_run_defaults_false(self, tmp_config):
+        """first_run_completed must default to False for a fresh install."""
+        path = tmp_config({})
+        cfg = load_config(path)
+        assert cfg["first_run_completed"] is False
+
+    def test_onboarding_version_present(self, tmp_config):
+        """onboarding_version must be present in the default config."""
+        path = tmp_config({})
+        cfg = load_config(path)
+        assert "onboarding_version" in cfg
+        assert cfg["onboarding_version"] == "1.0"
+
+    def test_first_run_completed_can_be_set_true(self, tmp_config):
+        """Config file can override first_run_completed to True."""
+        path = tmp_config({"first_run_completed": True})
+        cfg = load_config(path)
+        assert cfg["first_run_completed"] is True
+
+    def test_onboarding_version_in_default_config(self):
+        """DEFAULT_CONFIG must declare onboarding_version."""
+        assert "onboarding_version" in DEFAULT_CONFIG
+        assert DEFAULT_CONFIG["onboarding_version"] == "1.0"

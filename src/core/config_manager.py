@@ -110,6 +110,8 @@ DEFAULT_CONFIG: dict = {
     "clip_hotkey": "ctrl+alt+k",
     "personality_version": "1.0",
     "safety_version": "1.0",
+    "first_run_completed": False,
+    "onboarding_version": "1.0",
 }
 
 _SKIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
