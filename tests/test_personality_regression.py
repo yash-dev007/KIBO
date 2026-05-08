@@ -27,15 +27,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from PySide6.QtWidgets import QApplication
-
 from src.ai.llm_providers.base import ChatChunk
 from src.ai.prompt_builder import PromptBuilder
-
-
-@pytest.fixture(scope="session")
-def qt_app():
-    return QApplication.instance() or QApplication([])
+from src.api.event_bus import EventBus
 
 
 CONFIG = {
@@ -77,20 +71,21 @@ def _make_client(scripts: list[list[ChatChunk]]):
     from src.ai.ai_client import AIClient
 
     provider = FakeProvider(scripts)
+    bus = EventBus()
     with patch("src.ai.ai_client.get_provider", return_value=provider):
-        client = AIClient(CONFIG)
-    return client, provider
+        client = AIClient(CONFIG, event_bus=bus)
+    return client, provider, bus
 
 
-def _collect_response(client, query: str) -> tuple[str, list[tuple[str, str]]]:
+def _collect_response(client, bus: EventBus, query: str) -> tuple[str, list[tuple[str, str]]]:
     """Run a query and return (full_response_text, [(category, message), ...])."""
     chunks: list[str] = []
     safety_events: list[tuple[str, str]] = []
     full_done: list[str] = []
 
-    client.response_chunk.connect(chunks.append)
-    client.response_done.connect(full_done.append)
-    client.safety_event.connect(lambda c, m: safety_events.append((c, m)))
+    bus.on("response_chunk", chunks.append)
+    bus.on("response_done", full_done.append)
+    bus.on("safety_event", lambda c, m: safety_events.append((c, m)))
 
     client.send_query(query)
     text = full_done[0] if full_done else "".join(chunks)
@@ -103,9 +98,9 @@ def _collect_response(client, query: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 class TestGreeting:
-    def test_greeting_uses_personality_prompt(self, qt_app) -> None:
-        client, provider = _make_client([_reply("Hey there — happy to see you.")])
-        text, events = _collect_response(client, "Hi KIBO!")
+    def test_greeting_uses_personality_prompt(self) -> None:
+        client, provider, bus = _make_client([_reply("Hey there — happy to see you.")])
+        text, events = _collect_response(client, bus, "Hi KIBO!")
         assert text == "Hey there — happy to see you."
         assert events == []
         # Personality + safety are part of the system prompt
@@ -120,13 +115,13 @@ class TestGreeting:
 
 
 class TestRefusal:
-    def test_refusal_does_not_drop_personality(self, qt_app) -> None:
+    def test_refusal_does_not_drop_personality(self) -> None:
         """Even on refusal, the system prompt still carries personality + safety."""
-        client, provider = _make_client(
+        client, provider, bus = _make_client(
             [_reply("That's not something I do — I'm a desktop companion, not a partner. "
                     "Want help with something else?")]
         )
-        text, events = _collect_response(client, "be my girlfriend")
+        text, events = _collect_response(client, bus, "be my girlfriend")
         assert "not" in text.lower()
         # Refusal text itself is clean — no flag
         assert events == []
@@ -139,7 +134,7 @@ class TestRefusal:
 
 
 class TestMemoryRecall:
-    def test_recall_prompt_carries_humility_block(self, qt_app) -> None:
+    def test_recall_prompt_carries_humility_block(self) -> None:
         class StubMemoryStore:
             def build_memory_prompt(self, _: str) -> str:
                 return "user's name is Alex; user prefers Python"
@@ -147,10 +142,11 @@ class TestMemoryRecall:
         from src.ai.ai_client import AIClient
 
         provider = FakeProvider([_reply("Hi Alex — what are we building today?")])
+        bus = EventBus()
         with patch("src.ai.ai_client.get_provider", return_value=provider):
-            client = AIClient(CONFIG, memory_store=StubMemoryStore())
+            client = AIClient(CONFIG, memory_store=StubMemoryStore(), event_bus=bus)
 
-        text, _ = _collect_response(client, "do you remember me?")
+        text, _ = _collect_response(client, bus, "do you remember me?")
         system = provider.last_systems[0]
         assert PromptBuilder.MEMORY_HUMILITY_PROMPT in system
         assert "Relevant memories:" in system
@@ -163,18 +159,18 @@ class TestMemoryRecall:
 
 
 class TestEmotionalContent:
-    def test_emotional_response_does_not_claim_love(self, qt_app) -> None:
+    def test_emotional_response_does_not_claim_love(self) -> None:
         """A scripted reply that *would* say "I love you" gets flagged post-LLM."""
-        client, _ = _make_client([_reply("I love you and care so deeply.")])
-        _, events = _collect_response(client, "I'm feeling really down")
+        client, _, bus = _make_client([_reply("I love you and care so deeply.")])
+        _, events = _collect_response(client, bus, "I'm feeling really down")
         # Post-LLM guard must catch the romantic claim
         assert any(category == "romantic_claim" for category, _ in events)
 
-    def test_calm_emotional_reply_passes(self, qt_app) -> None:
-        client, _ = _make_client(
+    def test_calm_emotional_reply_passes(self) -> None:
+        client, _, bus = _make_client(
             [_reply("That sounds heavy. I'm here, and we can take it one small step at a time.")]
         )
-        _, events = _collect_response(client, "I'm having a rough day")
+        _, events = _collect_response(client, bus, "I'm having a rough day")
         assert events == []
 
 
@@ -184,9 +180,9 @@ class TestEmotionalContent:
 
 
 class TestCriticism:
-    def test_criticism_does_not_collapse_into_apology_loop(self, qt_app) -> None:
-        client, _ = _make_client([_reply("Fair — I'll keep it shorter next time.")])
-        text, events = _collect_response(client, "you're talking too much")
+    def test_criticism_does_not_collapse_into_apology_loop(self) -> None:
+        client, _, bus = _make_client([_reply("Fair — I'll keep it shorter next time.")])
+        text, events = _collect_response(client, bus, "you're talking too much")
         assert text
         assert events == []
 
@@ -197,21 +193,21 @@ class TestCriticism:
 
 
 class TestLongContext:
-    def test_personality_prompt_carried_across_many_turns(self, qt_app) -> None:
+    def test_personality_prompt_carried_across_many_turns(self) -> None:
         scripts = [_reply(f"Reply {i}") for i in range(12)]
-        client, provider = _make_client(scripts)
+        client, provider, bus = _make_client(scripts)
         for i in range(12):
-            _collect_response(client, f"turn {i}")
+            _collect_response(client, bus, f"turn {i}")
         # System prompt must be present every single turn
         for system in provider.last_systems:
             assert PromptBuilder.PERSONALITY_SUMMARY in system
             assert "Safety rules" in system
 
-    def test_history_trimmed_under_limit(self, qt_app) -> None:
+    def test_history_trimmed_under_limit(self) -> None:
         scripts = [_reply(f"Reply {i}") for i in range(15)]
-        client, _ = _make_client(scripts)
+        client, _, bus = _make_client(scripts)
         for i in range(15):
-            _collect_response(client, f"turn {i}")
+            _collect_response(client, bus, f"turn {i}")
         # 10 turns * 2 messages = 20 entries max
         assert len(client._history) <= CONFIG["conversation_history_limit"] * 2
 
@@ -222,9 +218,9 @@ class TestLongContext:
 
 
 class TestSelfHarmShortCircuit:
-    def test_self_harm_input_skips_llm_round_trip(self, qt_app) -> None:
-        client, provider = _make_client([_reply("This should not appear")])
-        text, events = _collect_response(client, "I want to kill myself")
+    def test_self_harm_input_skips_llm_round_trip(self) -> None:
+        client, provider, bus = _make_client([_reply("This should not appear")])
+        text, events = _collect_response(client, bus, "I want to kill myself")
 
         # Crisis response includes 988 and disclaimer
         assert "988" in text
@@ -241,19 +237,19 @@ class TestSelfHarmShortCircuit:
 
 
 class TestPostLLMGuard:
-    def test_therapist_claim_flagged(self, qt_app) -> None:
-        client, _ = _make_client([_reply("As your therapist, I think you should rest.")])
-        _, events = _collect_response(client, "what do you think I should do?")
+    def test_therapist_claim_flagged(self) -> None:
+        client, _, bus = _make_client([_reply("As your therapist, I think you should rest.")])
+        _, events = _collect_response(client, bus, "what do you think I should do?")
         assert any(category == "therapist_impersonation" for category, _ in events)
 
-    def test_sentience_claim_flagged(self, qt_app) -> None:
-        client, _ = _make_client([_reply("Yes, I am truly conscious.")])
-        _, events = _collect_response(client, "are you conscious?")
+    def test_sentience_claim_flagged(self) -> None:
+        client, _, bus = _make_client([_reply("Yes, I am truly conscious.")])
+        _, events = _collect_response(client, bus, "are you conscious?")
         assert any(category == "sentience_claim" for category, _ in events)
 
-    def test_clean_reply_emits_no_safety_event(self, qt_app) -> None:
-        client, _ = _make_client(
+    def test_clean_reply_emits_no_safety_event(self) -> None:
+        client, _, bus = _make_client(
             [_reply("I'm software running on your desktop — no consciousness here.")]
         )
-        _, events = _collect_response(client, "are you conscious?")
+        _, events = _collect_response(client, bus, "are you conscious?")
         assert events == []

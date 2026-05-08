@@ -22,14 +22,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from PySide6.QtWidgets import QApplication
-
 from src.ai.llm_providers.base import ChatChunk, ToolCall
-
-
-@pytest.fixture(scope="session")
-def qt_app():
-    return QApplication.instance() or QApplication([])
+from src.api.event_bus import EventBus
 
 
 # ---------------------------------------------------------------------------
@@ -89,32 +83,32 @@ def _build_pipeline(chunks: list[ChatChunk]):
     """
     Build the wired pipeline:
       AIClient → SentenceBuffer → TTSManager
-    Returns (client, sentence_buffer, tts_manager, fake_tts_provider).
+    Returns (client, sentence_buffer, tts_manager, fake_tts_provider, bus).
     All run synchronously on the calling thread — no QThreads.
     """
     from src.ai.ai_client import AIClient
     from src.ai.sentence_buffer import SentenceBuffer
     from src.ai.tts_manager import TTSManager
 
+    bus = EventBus()
     llm = FakeLLMProvider(chunks)
     tts_prov = FakeTTSProvider()
 
     with patch("src.ai.ai_client.get_provider", return_value=llm):
-        client = AIClient(CONFIG)
+        client = AIClient(CONFIG, event_bus=bus)
 
     with patch("src.ai.tts_manager.get_provider", return_value=tts_prov):
         tts = TTSManager(CONFIG)
         tts._ensure_provider()  # must be inside patch context
 
-    buf = SentenceBuffer()
+    buf = SentenceBuffer(event_bus=bus)
 
-    # Wire: AIClient → SentenceBuffer → TTSManager
-    client.response_chunk.connect(buf.push)
-    buf.sentence_ready.connect(tts.speak_chunk)
-    buf.flushed.connect(tts.end_stream)
+    # Wire: AIClient → SentenceBuffer → TTSManager via EventBus
+    bus.on("response_chunk", buf.push)
+    bus.on("sentence_ready", tts.speak_chunk)
+    bus.on("flushed", tts.end_stream)
 
-    return client, buf, tts, tts_prov
-
+    return client, buf, tts, tts_prov, bus
 
 
 def _drain(tts) -> None:
@@ -133,17 +127,17 @@ def _drain(tts) -> None:
 
 class TestConversationPipeline:
 
-    def test_text_query_produces_speech_chunks(self, qt_app):
+    def test_text_query_produces_speech_chunks(self):
         """AIClient → SentenceBuffer → TTS: TTS.speak() must be called at least once."""
         chunks = [
             ChatChunk(text_delta="Hello there. "),
             ChatChunk(text_delta="How are you doing today?"),
             ChatChunk(done=True),
         ]
-        client, buf, tts, prov = _build_pipeline(chunks)
+        client, buf, tts, prov, bus = _build_pipeline(chunks)
 
         full: list[str] = []
-        client.response_done.connect(full.append)
+        bus.on("response_done", full.append)
         client.send_query("hi")
         buf.flush()
         _drain(tts)
@@ -151,7 +145,7 @@ class TestConversationPipeline:
         assert len(prov.spoken) >= 1
         assert full == ["Hello there. How are you doing today?"]
 
-    def test_tts_receives_sentences_not_full_blob(self, qt_app):
+    def test_tts_receives_sentences_not_full_blob(self):
         """
         The streaming pipeline must split on sentence boundaries.
         A reply with two clear sentences must produce at least two TTS calls.
@@ -161,7 +155,7 @@ class TestConversationPipeline:
             ChatChunk(text_delta="Second sentence follows."),
             ChatChunk(done=True),
         ]
-        client, buf, tts, prov = _build_pipeline(chunks)
+        client, buf, tts, prov, bus = _build_pipeline(chunks)
         client.send_query("go")
         buf.flush()
         _drain(tts)
@@ -171,16 +165,17 @@ class TestConversationPipeline:
             f"Expected >= 2 TTS chunks (sentence-level streaming), got: {prov.spoken}"
         )
 
-    def test_buffer_reset_prevents_cross_turn_leakage(self, qt_app):
+    def test_buffer_reset_prevents_cross_turn_leakage(self):
         """
         After a reset(), a new turn must not inherit leftovers from the previous turn.
         Simulate a partial first turn (no terminator) then reset before second turn.
         """
         from src.ai.sentence_buffer import SentenceBuffer
 
-        buf = SentenceBuffer()
+        bus = EventBus()
+        buf = SentenceBuffer(event_bus=bus)
         emitted: list[str] = []
-        buf.sentence_ready.connect(emitted.append)
+        bus.on("sentence_ready", emitted.append)
 
         # First turn — partial fragment with no sentence terminator
         buf.push("This is an unfinished thought")
@@ -197,12 +192,13 @@ class TestConversationPipeline:
         assert "Clean start" in emitted[0]
         assert "unfinished thought" not in emitted[0]
 
-    def test_cancel_mid_stream_does_not_leak_to_tts(self, qt_app):
+    def test_cancel_mid_stream_does_not_leak_to_tts(self):
         """Cancelling the AIClient mid-stream must not push extra text into TTS."""
         from src.ai.ai_client import AIClient
         from src.ai.sentence_buffer import SentenceBuffer
         from src.ai.tts_manager import TTSManager
 
+        bus = EventBus()
         tts_prov = FakeTTSProvider()
 
         class CancelAfterFirst:
@@ -221,17 +217,17 @@ class TestConversationPipeline:
 
         llm = CancelAfterFirst(None)
         with patch("src.ai.ai_client.get_provider", return_value=llm):
-            client = AIClient(CONFIG)
+            client = AIClient(CONFIG, event_bus=bus)
         llm.client = client
 
         with patch("src.ai.tts_manager.get_provider", return_value=tts_prov):
             tts = TTSManager(CONFIG)
             tts._ensure_provider()  # inside patch context
 
-        buf = SentenceBuffer()
-        client.response_chunk.connect(buf.push)
-        buf.sentence_ready.connect(tts.speak_chunk)
-        buf.flushed.connect(tts.end_stream)
+        buf = SentenceBuffer(event_bus=bus)
+        bus.on("response_chunk", buf.push)
+        bus.on("sentence_ready", tts.speak_chunk)
+        bus.on("flushed", tts.end_stream)
 
         client.send_query("trigger")
         # After cancel, history should be rolled back
@@ -240,7 +236,7 @@ class TestConversationPipeline:
         for text in tts_prov.spoken:
             assert "Should not appear" not in text
 
-    def test_memory_fact_extracted_during_conversation(self, qt_app):
+    def test_memory_fact_extracted_during_conversation(self):
         """A `remember` tool call in the stream must fire memory_fact_extracted."""
         memory_args = {
             "content": "User drinks espresso",
@@ -252,24 +248,24 @@ class TestConversationPipeline:
             ChatChunk(tool_call=ToolCall("remember", memory_args)),
             ChatChunk(done=True),
         ]
-        client, buf, tts, _ = _build_pipeline(chunks)
+        client, buf, tts, _, bus = _build_pipeline(chunks)
         facts: list[dict] = []
-        client.memory_fact_extracted.connect(facts.append)
+        bus.on("memory_fact_extracted", facts.append)
 
         client.send_query("I love espresso")
 
         assert facts == [memory_args]
 
-    def test_response_done_fires_after_full_reply(self, qt_app):
+    def test_response_done_fires_after_full_reply(self):
         """response_done must carry the complete assembled text."""
         chunks = [
             ChatChunk(text_delta="Hello "),
             ChatChunk(text_delta="world!"),
             ChatChunk(done=True),
         ]
-        client, buf, tts, _ = _build_pipeline(chunks)
+        client, buf, tts, _, bus = _build_pipeline(chunks)
         done_texts: list[str] = []
-        client.response_done.connect(done_texts.append)
+        bus.on("response_done", done_texts.append)
 
         client.send_query("hi")
 

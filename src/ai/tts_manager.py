@@ -1,9 +1,9 @@
 """
-tts_manager.py — Provider-agnostic TTS on a dedicated QThread.
+tts_manager.py — Provider-agnostic TTS on a dedicated daemon Thread.
 
 Picks the best backend (Piper neural > pyttsx3 SAPI5) via
-src.ai.tts_providers. Exposes both a one-shot `speak()` slot and a
-streaming `speak_chunk()` slot for sentence-by-sentence playback that
+src.ai.tts_providers. Exposes both a one-shot `speak()` method and a
+streaming `speak_chunk()` method for sentence-by-sentence playback that
 overlaps with token generation.
 """
 
@@ -14,26 +14,21 @@ import queue
 import threading
 from typing import Optional
 
-from PySide6.QtCore import QMetaObject, QObject, QThread, Qt, Signal, Slot, Q_ARG
-
 from src.ai.tts_providers import TTSProvider, get_provider
 
 logger = logging.getLogger(__name__)
 
 
-class TTSManager(QObject):
-    """Plays speech via a configured TTSProvider. Lives on a QThread."""
+class TTSManager:
+    """Plays speech via a configured TTSProvider."""
 
-    speech_done = Signal()
-    error_occurred = Signal(str)
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
+    def __init__(self, config: dict, event_bus=None) -> None:
         self._config = config
+        self._event_bus = event_bus
         self._enabled = config.get("tts_enabled", True)
         self._silent_mode = False
         self._provider: Optional[TTSProvider] = None
-        self._chunk_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._chunk_queue: queue.Queue[Optional[str]] = queue.Queue()
         self._streaming_thread: Optional[threading.Thread] = None
         self._streaming_lock = threading.Lock()
 
@@ -47,33 +42,32 @@ class TTSManager(QObject):
             return True
         except Exception as exc:
             logger.error("TTS provider init failed: %s", exc)
-            self.error_occurred.emit(f"TTS unavailable: {exc}")
+            if self._event_bus:
+                self._event_bus.emit("error_occurred", f"TTS unavailable: {exc}")
             self._enabled = False
             return False
 
-    @Slot(str)
     def speak(self, text: str) -> None:
-        """One-shot blocking speak (used for full-reply mode)."""
         if not self._enabled or self._silent_mode or not text.strip():
-            self.speech_done.emit()
+            if self._event_bus:
+                self._event_bus.emit("speech_done")
             return
         if not self._ensure_provider():
-            self.speech_done.emit()
+            if self._event_bus:
+                self._event_bus.emit("speech_done")
             return
 
         try:
             self._provider.speak(text)
         except Exception as exc:
             logger.error("TTS speak error: %s", exc)
-            self.error_occurred.emit(f"TTS error: {exc}")
+            if self._event_bus:
+                self._event_bus.emit("error_occurred", f"TTS error: {exc}")
         finally:
-            self.speech_done.emit()
+            if self._event_bus:
+                self._event_bus.emit("speech_done")
 
-    # ── Streaming sentence-by-sentence ──────────────────────────────────
-
-    @Slot(str)
     def speak_chunk(self, sentence: str) -> None:
-        """Queue a sentence for playback. Spawns the drain thread on first call."""
         if not self._enabled or self._silent_mode or not sentence.strip():
             return
         if not self._ensure_provider():
@@ -82,25 +76,23 @@ class TTSManager(QObject):
         with self._streaming_lock:
             self._chunk_queue.put(sentence)
             if self._streaming_thread is None or not self._streaming_thread.is_alive():
-                queue_ref = self._chunk_queue
                 self._streaming_thread = threading.Thread(
-                    target=self._drain_chunks, args=(queue_ref,), daemon=True
+                    target=self._drain_chunks, daemon=True
                 )
                 self._streaming_thread.start()
 
-    @Slot()
     def end_stream(self) -> None:
-        """Signal end of stream — drain thread will emit speech_done after last chunk."""
         with self._streaming_lock:
             if self._streaming_thread is not None and self._streaming_thread.is_alive():
                 self._chunk_queue.put(None)  # sentinel
             else:
-                self.speech_done.emit()
+                if self._event_bus:
+                    self._event_bus.emit("speech_done")
 
-    def _drain_chunks(self, chunk_queue: "queue.Queue[Optional[str]]") -> None:
+    def _drain_chunks(self) -> None:
         try:
             while True:
-                chunk = chunk_queue.get()
+                chunk = self._chunk_queue.get()
                 if chunk is None:
                     break
                 if self._silent_mode:
@@ -110,105 +102,59 @@ class TTSManager(QObject):
                 except Exception as exc:
                     logger.error("TTS chunk error: %s", exc)
         finally:
-            self.speech_done.emit()
-
-    # ── Mode toggles ────────────────────────────────────────────────────
+            if self._event_bus:
+                self._event_bus.emit("speech_done")
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
 
-    @Slot(bool)
     def set_silent_mode(self, silent: bool) -> None:
         self._silent_mode = silent
-        if silent:
-            self.interrupt()
-
-    @Slot()
-    def test_voice(self) -> None:
-        """Speak a short fixed phrase so the user can verify TTS in Settings.
-
-        Bypasses silent_mode so a Settings "Test voice" button still produces
-        sound when the user has muted KIBO during a conversation.
-        """
-        if not self._enabled:
-            self.error_occurred.emit("TTS is disabled.")
-            self.speech_done.emit()
-            return
-        if not self._ensure_provider():
-            self.speech_done.emit()
-            return
-        try:
-            self._provider.speak("Hi, this is KIBO. Voice test successful.")
-        except Exception as exc:
-            logger.error("Test voice failed: %s", exc)
-            self.error_occurred.emit(f"Test voice failed: {exc}")
-        finally:
-            self.speech_done.emit()
-
-    @Slot()
-    def interrupt(self) -> None:
-        """Stop active playback and discard queued chunks from the current stream."""
-        with self._streaming_lock:
-            old_queue = self._chunk_queue
-            self._chunk_queue = queue.Queue()
-            if self._streaming_thread is not None and self._streaming_thread.is_alive():
-                _discard_queue(old_queue)
-                old_queue.put(None)
-            else:
-                self._streaming_thread = None
-
-        if self._provider is not None:
+        if silent and self._provider is not None:
             try:
                 self._provider.stop()
             except Exception:
                 pass
 
 
-def _discard_queue(chunk_queue: "queue.Queue[Optional[str]]") -> None:
-    with chunk_queue.mutex:
-        chunk_queue.queue.clear()
-        chunk_queue.unfinished_tasks = 0
-        chunk_queue.all_tasks_done.notify_all()
+class TTSThread(threading.Thread):
+    """Daemon thread that owns a TTSManager and dispatches calls via a queue."""
 
-
-class TTSThread(QThread):
-    """Owns TTSManager on this thread."""
-
-    speech_done = Signal()
-
-    def __init__(self, config: dict, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-        self._manager = TTSManager(config)
-        self._manager.moveToThread(self)
-        self._manager.speech_done.connect(self.speech_done)
-
-    def run(self) -> None:
-        self.exec()
-
-    def speak(self, text: str) -> None:
-        QMetaObject.invokeMethod(
-            self._manager, "speak", Qt.QueuedConnection, Q_ARG(str, text)
-        )
-
-    def speak_chunk(self, sentence: str) -> None:
-        QMetaObject.invokeMethod(
-            self._manager, "speak_chunk", Qt.QueuedConnection, Q_ARG(str, sentence)
-        )
-
-    def end_stream(self) -> None:
-        QMetaObject.invokeMethod(self._manager, "end_stream", Qt.QueuedConnection)
-
-    def interrupt(self) -> None:
-        QMetaObject.invokeMethod(self._manager, "interrupt", Qt.QueuedConnection)
-
-    def test_voice(self) -> None:
-        QMetaObject.invokeMethod(self._manager, "test_voice", Qt.QueuedConnection)
-
-    def stop(self) -> None:
-        self.interrupt()
-        self.quit()
-        self.wait(3000)
+    def __init__(self, config: dict, event_bus=None) -> None:
+        super().__init__(daemon=True)
+        self._manager = TTSManager(config, event_bus=event_bus)
+        self._queue: queue.Queue[Optional[tuple]] = queue.Queue()
+        self._stop_event = threading.Event()
 
     @property
     def manager(self) -> TTSManager:
         return self._manager
+
+    def run(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                item = self._queue.get(timeout=0.1)
+                try:
+                    if item is None:
+                        break
+                    method, arg = item
+                    if arg is None:
+                        getattr(self._manager, method)()
+                    else:
+                        getattr(self._manager, method)(arg)
+                finally:
+                    self._queue.task_done()
+            except queue.Empty:
+                continue
+
+    def speak(self, text: str) -> None:
+        self._queue.put(("speak", text))
+
+    def speak_chunk(self, sentence: str) -> None:
+        self._queue.put(("speak_chunk", sentence))
+
+    def end_stream(self) -> None:
+        self._queue.put(("end_stream", None))
+
+    def stop(self) -> None:
+        self._stop_event.set()

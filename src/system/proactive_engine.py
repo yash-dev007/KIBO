@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import datetime
 import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
-
 from src.ai.brain import SensorData
 from src.system.notification_router import NotificationRouter
+from src.core.periodic_thread import PeriodicThread
 
 logger = logging.getLogger(__name__)
 
@@ -73,22 +74,20 @@ RULES: list[ProactiveRule] = [
 ]
 
 
-class ProactiveEngine(QObject):
-    proactive_notification = Signal(str, str, str)
-
+class ProactiveEngine:
     def __init__(
         self,
         config: dict,
         router: NotificationRouter,
         task_runner=None,
         clock_fn: Optional[Callable[[], datetime.datetime]] = None,
+        event_bus=None,
     ) -> None:
-        super().__init__()
         self._config = config
         self._router = router
+        self._event_bus = event_bus
         self._clock_fn: Callable[[], datetime.datetime] = clock_fn or datetime.datetime.now
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._on_tick)
+        self._thread: Optional[PeriodicThread] = None
 
         self._battery_percent: Optional[float] = None
         self._cpu_percent: Optional[float] = None
@@ -111,31 +110,30 @@ class ProactiveEngine(QObject):
         self._tasks_pending = sum(1 for t in tasks if t.get("state") == "pending")
         self._tasks_blocked = sum(1 for t in tasks if t.get("state") == "blocked")
         self._tasks_done_today = sum(
-            1
-            for t in tasks
+            1 for t in tasks
             if t.get("state") == "completed" and (t.get("completed_at") or 0) >= today_start
         )
 
     def start(self) -> None:
-        self._timer.start(60_000)
+        self._thread = PeriodicThread(60_000, self._on_tick)
+        self._thread.start()
 
     def stop(self) -> None:
-        self._timer.stop()
+        if self._thread is not None:
+            self._thread.stop()
+            self._thread = None
 
     def update_last_interaction(self) -> None:
         self._router.update_last_interaction()
 
-    @Slot(dict)
     def on_config_changed(self, new_config: dict) -> None:
         self._config = new_config
 
-    @Slot(SensorData)
     def on_sensor_update(self, data: SensorData) -> None:
         self._battery_percent = data.battery_percent
         self._cpu_percent = getattr(data, "cpu_percent", None)
 
-    @Slot(list)
-    def on_calendar_updated(self, events: list[dict]) -> None:
+    def on_calendar_updated(self, events: list) -> None:
         if not events:
             self._next_meeting_minutes = -1
             return
@@ -147,12 +145,10 @@ class ProactiveEngine(QObject):
         except Exception:
             self._next_meeting_minutes = -1
 
-    @Slot(dict)
     def on_task_completed(self, task: dict) -> None:
         self._tasks_done_today += 1
         self._tasks_pending = max(0, self._tasks_pending - 1)
 
-    @Slot(dict)
     def on_task_blocked(self, task: dict) -> None:
         self._tasks_blocked += 1
         self._tasks_pending = max(0, self._tasks_pending - 1)
@@ -186,17 +182,10 @@ class ProactiveEngine(QObject):
             app_open_minutes=app_open_mins,
         )
 
-        if self._config.get("demo_mode", False):
-            demo_idle = int(self._config.get("demo_proactive_idle_minutes", 1))
-            if ctx.idle_minutes >= demo_idle:
-                self.proactive_notification.emit(
-                    "idle-checkin",
-                    "Quiet stretch detected. I'm still here when you want me.",
-                    "low",
-                )
-                return
-
         for rule in RULES:
             if rule.condition(ctx):
-                self.proactive_notification.emit(rule.type, rule.message(ctx), rule.priority)
+                if self._event_bus:
+                    self._event_bus.emit(
+                        "proactive_notification", rule.type, rule.message(ctx), rule.priority
+                    )
                 break

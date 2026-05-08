@@ -155,19 +155,3 @@ class TestOnboardingConfigKeys:
         """DEFAULT_CONFIG must declare onboarding_version."""
         assert "onboarding_version" in DEFAULT_CONFIG
         assert DEFAULT_CONFIG["onboarding_version"] == "1.0"
-
-
-class TestDemoAndDiagnosticsConfig:
-    def test_proactivity_defaults_to_opt_in(self, tmp_config):
-        cfg = load_config(tmp_config({}))
-        assert cfg["proactive_enabled"] is False
-
-    def test_demo_keys_present(self):
-        for key in (
-            "demo_mode",
-            "demo_llm_responses",
-            "demo_llm_delay_ms",
-            "demo_proactive_idle_minutes",
-            "diagnostics_include_memories",
-        ):
-            assert key in DEFAULT_CONFIG

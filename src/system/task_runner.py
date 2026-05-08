@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import uuid
@@ -5,37 +7,27 @@ import datetime
 import threading
 import httpx
 from copy import deepcopy
-from typing import Optional, List, Dict
-from pathlib import Path
+from typing import Optional, List
 
-from PySide6.QtCore import QObject, Signal, QTimer
-
-from src.ai.ai_client import AIClient
 from src.core.config_manager import get_user_data_dir
+from src.core.periodic_thread import PeriodicThread
 
 logger = logging.getLogger(__name__)
 
-class TaskRunner(QObject):
-    task_completed  = Signal(dict)
-    task_failed     = Signal(dict)
-    task_blocked    = Signal(dict)
-    task_started    = Signal(dict)
-    status_update   = Signal(str)
 
-    def __init__(self, config: dict, ai_client: AIClient) -> None:
-        super().__init__()
+class TaskRunner:
+    def __init__(self, config: dict, ai_client, event_bus=None) -> None:
         self._config = config
-        self._ai_client = ai_client  # Used mainly for URL and model, or we can use our own logic
+        self._event_bus = event_bus
+        self._ai_client = ai_client
         self._base_url = config.get("ollama_base_url", "http://localhost:11434")
         self._model = config.get("ollama_model", "qwen2.5-coder:7b")
-        
+
         self._tasks_file = get_user_data_dir() / "tasks.json"
         self._cost_file = get_user_data_dir() / "cost_state.json"
-        
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._process_queue)
 
-        self._active_worker = threading.Event()  # thread-safe: set=busy, clear=idle
+        self._thread: Optional[PeriodicThread] = None
+        self._active_worker = threading.Event()
         self._tasks_lock = threading.Lock()
         self._tasks_cache: List[dict] = self._load_tasks_from_disk()
 
@@ -96,10 +88,13 @@ class TaskRunner(QObject):
         self._process_queue()
 
     def start(self) -> None:
-        self._timer.start(30000)
+        self._thread = PeriodicThread(30_000, self._process_queue)
+        self._thread.start()
 
     def stop(self) -> None:
-        self._timer.stop()
+        if self._thread is not None:
+            self._thread.stop()
+            self._thread = None
 
     def _check_rate_limit(self) -> bool:
         cost = {"hourly_calls": 0, "last_reset": 0}
@@ -138,19 +133,21 @@ class TaskRunner(QObject):
             task["state"] = "blocked"
             task["error"] = "awaiting_approval"
             self._save_tasks(tasks)
-            self.task_blocked.emit(task)
+            if self._event_bus:
+                self._event_bus.emit("task_blocked", task)
             return
 
         if not self._check_rate_limit():
-            self.status_update.emit("Rate limit reached. Pausing tasks.")
+            if self._event_bus:
+                self._event_bus.emit("status_update", "Rate limit reached. Pausing tasks.")
             return
 
-        # Start execution
         self._active_worker.set()
         task["state"] = "in_progress"
         self._save_tasks(tasks)
-        self.task_started.emit(task)
-        
+        if self._event_bus:
+            self._event_bus.emit("task_started", task)
+
         threading.Thread(target=self._run_task, args=(task,), daemon=True).start()
 
     def _run_task(self, task: dict) -> None:
@@ -192,20 +189,21 @@ class TaskRunner(QObject):
                 t["state"] = "blocked"
                 t["error"] = f"Max retries exceeded: {error_msg}"
                 self._save_tasks(tasks)
-                self.task_blocked.emit(t)
+                if self._event_bus:
+                    self._event_bus.emit("task_blocked", t)
             else:
                 t["state"] = "pending"
                 t["error"] = error_msg
                 self._save_tasks(tasks)
-                self.task_failed.emit(t)
+                if self._event_bus:
+                    self._event_bus.emit("task_failed", t)
         else:
             t["state"] = "completed"
             t["completed_at"] = int(datetime.datetime.now().timestamp())
             t["result"] = result_text
             t["error"] = None
             self._save_tasks(tasks)
-            self.task_completed.emit(t)
-            
+            if self._event_bus:
+                self._event_bus.emit("task_completed", t)
+
         self._active_worker.clear()
-        # Optional: Can emit a signal to self._process_queue here if Qt QueuedConnection is used.
-        # But timer will pick it up on next tick.
