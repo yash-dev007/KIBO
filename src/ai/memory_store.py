@@ -8,6 +8,7 @@ browse, search, and edit KIBO's memories visually.
 An auto-generated index file (KIBO Dashboard.md) provides an overview
 of all stored memories, grouped by category.
 """
+from __future__ import annotations
 
 import datetime
 import logging
@@ -15,13 +16,15 @@ import re
 import threading
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import httpx
-from PySide6.QtCore import QObject, Signal, Slot
 
 from src.core.config_manager import get_user_data_dir
 from src.ai.memory_providers import get_provider as _get_memory_provider
+
+if TYPE_CHECKING:
+    from src.api.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +83,11 @@ def _build_frontmatter(meta: dict) -> str:
 
 # ═══════════════════════════════════════════════════════════════════════
 
-class MemoryStore(QObject):
+class MemoryStore:
     """Obsidian vault-based memory store with thread-safe caching."""
 
-    facts_updated = Signal()
-
-    def __init__(self, config: dict) -> None:
-        super().__init__()
+    def __init__(self, config: dict, event_bus: "EventBus | None" = None) -> None:
+        self._event_bus = event_bus
         self._config = config
         self._vault_dir = get_user_data_dir() / "vault"
         self._memory_dir = self._vault_dir / "memories"
@@ -115,7 +116,6 @@ class MemoryStore(QObject):
             return
         threading.Thread(target=self._extract_worker, args=(conversation_text,), daemon=True).start()
 
-    @Slot(dict)
     def add_fact_inline(self, fact: dict) -> None:
         """Save a single fact emitted inline by the LLM as a `remember` tool call.
 
@@ -145,7 +145,22 @@ class MemoryStore(QObject):
             extracted_at=now_ts,
         )
         self._rebuild_dashboard()
-        self.facts_updated.emit()
+        if self._event_bus:
+            self._event_bus.emit("facts_updated")
+
+    def get_all_facts(self) -> List[dict]:
+        with self._lock:
+            return self._load_all()
+
+    def delete_fact(self, fact_id: str) -> None:
+        with self._lock:
+            for p in self._memory_dir.glob(f"*{fact_id}*.md"):
+                p.unlink(missing_ok=True)
+            self._cache.pop(fact_id, None)
+            self._provider.delete([fact_id])
+        self._rebuild_dashboard()
+        if self._event_bus:
+            self._event_bus.emit("facts_updated")
 
     def retrieve_relevant(self, query: str, max_results: int = 5) -> List[dict]:
         """Find memories relevant to the query via the configured provider."""
@@ -174,7 +189,8 @@ class MemoryStore(QObject):
             self._provider.clear()
             self._migration_done.set()
         self._rebuild_dashboard()
-        self.facts_updated.emit()
+        if self._event_bus:
+            self._event_bus.emit("facts_updated")
 
     # ── Loading ─────────────────────────────────────────────────────────
 

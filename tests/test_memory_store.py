@@ -1,6 +1,13 @@
 import datetime
-
+import pytest
+from unittest.mock import patch
+from src.api.event_bus import EventBus
 from src.ai.memory_store import MemoryStore
+
+
+@pytest.fixture
+def bus():
+    return EventBus()
 
 
 def _write_memory(path, fact: dict) -> None:
@@ -17,7 +24,7 @@ def _write_memory(path, fact: dict) -> None:
     path.write_text(content, "utf-8")
 
 
-def test_retrieve_relevant(tmp_path, monkeypatch):
+def test_retrieve_relevant(tmp_path, monkeypatch, bus):
     config = {
         "memory_enabled": True,
         "memory_model": "test",
@@ -26,7 +33,7 @@ def test_retrieve_relevant(tmp_path, monkeypatch):
 
     monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
 
-    store = MemoryStore(config)
+    store = MemoryStore(config, event_bus=bus)
 
     now = int(datetime.datetime.now().timestamp())
     test_fact = {
@@ -45,10 +52,10 @@ def test_retrieve_relevant(tmp_path, monkeypatch):
     assert results[0]["content"] == "User likes dark mode."
 
 
-def test_build_memory_prompt(tmp_path, monkeypatch):
+def test_build_memory_prompt(tmp_path, monkeypatch, bus):
     config = {"memory_enabled": True}
     monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
-    store = MemoryStore(config)
+    store = MemoryStore(config, event_bus=bus)
 
     now = int(datetime.datetime.now().timestamp())
     test_fact = {
@@ -66,10 +73,10 @@ def test_build_memory_prompt(tmp_path, monkeypatch):
     assert "- KIBO is awesome." in prompt
 
 
-def test_clear_all_facts_clears_retrieval_index(tmp_path, monkeypatch):
+def test_clear_all_facts_clears_retrieval_index(tmp_path, monkeypatch, bus):
     config = {"memory_enabled": True, "memory_provider": "lexical"}
     monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
-    store = MemoryStore(config)
+    store = MemoryStore(config, event_bus=bus)
 
     store.add_fact_inline({
         "category": "preference",
@@ -83,14 +90,14 @@ def test_clear_all_facts_clears_retrieval_index(tmp_path, monkeypatch):
     assert store.retrieve_relevant("espresso") == []
 
 
-def test_memory_cap_evicts_retrieval_index(tmp_path, monkeypatch):
+def test_memory_cap_evicts_retrieval_index(tmp_path, monkeypatch, bus):
     config = {
         "memory_enabled": True,
         "memory_provider": "lexical",
         "memory_max_facts": 1,
     }
     monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
-    store = MemoryStore(config)
+    store = MemoryStore(config, event_bus=bus)
 
     store.add_fact_inline({
         "category": "preference",
@@ -105,3 +112,19 @@ def test_memory_cap_evicts_retrieval_index(tmp_path, monkeypatch):
 
     assert store.retrieve_relevant("espresso") == []
     assert len(store.retrieve_relevant("tea")) == 1
+
+
+def test_facts_updated_event_emitted(tmp_path, monkeypatch, bus):
+    config = {"memory_enabled": True, "memory_provider": "lexical"}
+    monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
+    store = MemoryStore(config, event_bus=bus)
+
+    emitted = []
+    bus.on("facts_updated", lambda: emitted.append(1))
+
+    store.add_fact_inline({
+        "category": "fact",
+        "content": "EventBus works.",
+        "keywords": ["eventbus"],
+    })
+    assert len(emitted) == 1
