@@ -268,3 +268,18 @@ class TestAIThread:
         thread.stop()
         thread.join(timeout=2.0)
         assert not thread.is_alive()
+
+    def test_ai_thread_stops_without_busy_wait(self, bus):
+        """stop() must unblock a thread blocked on queue.get() with no timeout."""
+        import time
+        from src.ai.ai_client import AIThread
+        with patch("src.ai.ai_client.get_provider", return_value=FakeProvider([])):
+            thread = AIThread(CONFIG, event_bus=bus)
+        thread.start()
+        time.sleep(0.05)
+        t0 = time.time()
+        thread.stop()
+        thread.join(timeout=1.0)
+        elapsed = time.time() - t0
+        assert not thread.is_alive(), "AIThread did not stop within 1 second"
+        assert elapsed < 0.5, f"stop() took {elapsed:.2f}s — sentinel not working"

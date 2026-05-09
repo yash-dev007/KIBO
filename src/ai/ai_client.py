@@ -334,28 +334,24 @@ class AIThread(threading.Thread):
         super().__init__(daemon=True)
         self._client = AIClient(config, memory_store, event_bus=event_bus)
         self._queue: queue.Queue[Optional[tuple]] = queue.Queue()
-        self._stop_event = threading.Event()
 
     @property
     def client(self) -> AIClient:
         return self._client
 
     def run(self) -> None:
-        while not self._stop_event.is_set():
+        while True:
+            item = self._queue.get()
             try:
-                item = self._queue.get(timeout=0.1)
-                try:
-                    if item is None:
-                        break
-                    method, arg = item
-                    if arg is None:
-                        getattr(self._client, method)()
-                    else:
-                        getattr(self._client, method)(arg)
-                finally:
-                    self._queue.task_done()
-            except queue.Empty:
-                continue
+                if item is None:
+                    break
+                method, arg = item
+                if arg is None:
+                    getattr(self._client, method)()
+                else:
+                    getattr(self._client, method)(arg)
+            finally:
+                self._queue.task_done()
 
     def send_query(self, text: str) -> None:
         self._queue.put(("send_query", text))
@@ -368,4 +364,4 @@ class AIThread(threading.Thread):
 
     def stop(self) -> None:
         self.cancel_current()
-        self._stop_event.set()
+        self._queue.put(None)
