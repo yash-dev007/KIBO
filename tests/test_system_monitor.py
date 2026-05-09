@@ -55,3 +55,17 @@ def test_sensor_data_fields():
     data = received[0]
     assert data.cpu_percent == 42.0
     assert data.battery_percent is None
+
+
+def test_config_change_joins_old_thread():
+    """on_config_changed must fully stop the old PeriodicThread before starting a new one."""
+    monitor = SystemMonitor({"poll_interval_ms": 500}, event_bus=None)
+    monitor.start()
+    old_thread = monitor._thread
+
+    monitor.on_config_changed({"poll_interval_ms": 600})
+
+    old_thread.join(timeout=2.0)
+    assert not old_thread.is_alive(), "Old PeriodicThread still alive after on_config_changed"
+
+    monitor.stop()

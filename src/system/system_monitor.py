@@ -38,6 +38,7 @@ class SystemMonitor:
         interval = new_config["poll_interval_ms"]
         if interval != self._current_interval and self._thread is not None:
             self._thread.stop()
+            self._thread.join(timeout=1.0)
             self._current_interval = interval
             self._thread = PeriodicThread(self._current_interval, self._poll)
             self._thread.start()
