@@ -89,6 +89,14 @@ def test_delete_memory_fact(client, memory_store):
     memory_store.delete_fact.assert_called_once_with("1")
 
 
+def test_put_memory_fact(client, memory_store):
+    memory_store.update_fact.return_value = True
+    resp = client.put("/memory/1", json={"content": "User likes tea"})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    memory_store.update_fact.assert_called_once_with("1", {"content": "User likes tea"})
+
+
 # ── Tasks ────────────────────────────────────────────────────────────────
 
 

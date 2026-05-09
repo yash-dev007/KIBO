@@ -20,7 +20,7 @@ from typing import Optional
 
 from src.api.event_bus import EventBus
 from src.api.server import create_app
-from src.core.config_manager import get_user_data_dir, load_config
+from src.core.config_manager import FileConfigManager, get_user_data_dir, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ def create_backend(config: dict) -> dict:
     """Construct and wire all backend components. Returns a component dict."""
 
     bus = EventBus()
+    config_manager = FileConfigManager()
 
     # ── Core components ───────────────────────────────────────────────────
     from src.ai.brain import Brain
@@ -105,8 +106,6 @@ def create_backend(config: dict) -> dict:
 
         # Re-wire task_runner with real AI client
         task_runner = TaskRunner(config, ai_thread.client, event_bus=bus)
-        bus.on("task_completed", proactive_engine.on_task_completed)
-        bus.on("task_blocked", proactive_engine.on_task_blocked)
 
     return {
         "event_bus": bus,
@@ -122,7 +121,7 @@ def create_backend(config: dict) -> dict:
         "voice_thread": voice_thread,
         "hotkey_thread": hotkey_thread,
         "sentence_buffer": sentence_buffer,
-        "config_manager": None,  # placeholder for future ConfigManager class
+        "config_manager": config_manager,
     }
 
 
@@ -139,6 +138,7 @@ def start(config: dict, host: str = "127.0.0.1", port: int = 8765) -> None:
 
     app = create_app(
         bus,
+        config_manager=components["config_manager"],
         memory_store=components["memory_store"],
         task_runner=components["task_runner"],
         ai_thread=components["ai_thread"],
@@ -190,5 +190,5 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
 
-    config = load_config()
-    start(config, host=args.host, port=args.port)
+    config_manager = FileConfigManager()
+    start(config_manager.get_config(), host=args.host, port=args.port)

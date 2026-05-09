@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.event_bus import EventBus
 
@@ -71,6 +72,14 @@ def create_app(
         yield
 
     app = FastAPI(title="KIBO API", lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://localhost:4173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # ── Bus → WebSocket forwarding ────────────────────────────────────────
 
@@ -140,6 +149,13 @@ def create_app(
         if memory_store is not None:
             memory_store.delete_fact(fact_id)
         return {"ok": True}
+
+    @app.put("/memory/{fact_id}")
+    async def put_memory(fact_id: str, body: dict):
+        updated = False
+        if memory_store is not None and hasattr(memory_store, "update_fact"):
+            updated = bool(memory_store.update_fact(fact_id, body))
+        return {"ok": updated}
 
     @app.get("/tasks")
     async def get_tasks():

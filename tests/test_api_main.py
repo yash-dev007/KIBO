@@ -107,3 +107,20 @@ def test_create_app_uses_backend(config):
     from fastapi.testclient import TestClient
     client = TestClient(app)
     assert client.get("/health").status_code == 200
+
+
+def test_backend_exposes_config_manager(config, tmp_path, monkeypatch):
+    monkeypatch.setattr("src.core.config_manager.get_app_root", lambda: tmp_path)
+    monkeypatch.setattr("src.api.main.FileConfigManager", __import__(
+        "src.core.config_manager", fromlist=["FileConfigManager"]
+    ).FileConfigManager)
+
+    from src.api.main import create_backend
+
+    components = create_backend(config)
+    config_manager = components["config_manager"]
+
+    config_manager.update_config({"buddy_skin": "bubbles"})
+
+    assert config_manager.get_config()["buddy_skin"] == "bubbles"
+    assert (tmp_path / "config.json").exists()

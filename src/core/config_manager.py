@@ -9,6 +9,7 @@ import re
 import types
 import logging
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,40 @@ def load_config(path: str = "config.json") -> types.MappingProxyType:
     _validate(merged)
 
     return types.MappingProxyType(merged)
+
+
+class FileConfigManager:
+    """Mutable config facade used by the FastAPI settings endpoint.
+
+    `load_config()` intentionally returns an immutable mapping for runtime
+    safety. The API layer still needs a controlled write path for Electron
+    settings, so this class owns the merge, validation, and JSON persistence.
+    """
+
+    def __init__(self, path: str = "config.json") -> None:
+        self._path = path
+        self._config: dict[str, Any] = dict(load_config(path))
+
+    @property
+    def path(self) -> Path:
+        return get_app_root() / self._path
+
+    def get_config(self) -> dict[str, Any]:
+        return dict(self._config)
+
+    def update_config(self, patch: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(patch, dict):
+            raise TypeError("Config patch must be a dict")
+
+        next_config = dict(self._config)
+        next_config.update(patch)
+        _validate(next_config)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("w", encoding="utf-8") as f:
+            json.dump(next_config, f, indent=4)
+            f.write("\n")
+        self._config = next_config
+        return self.get_config()
 
 
 def _validate(cfg: dict) -> None:

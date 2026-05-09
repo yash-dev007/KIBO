@@ -11,7 +11,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.config_manager import load_config, DEFAULT_CONFIG
+from src.core.config_manager import FileConfigManager, load_config, DEFAULT_CONFIG
 
 
 @pytest.fixture
@@ -84,6 +84,31 @@ class TestLoadConfig:
         path = tmp_config({"poll_interval_ms": "fast"})
         cfg = load_config(path)
         assert cfg["poll_interval_ms"] == DEFAULT_CONFIG["poll_interval_ms"]
+
+
+class TestFileConfigManager:
+    def test_update_config_persists_json(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.core.config_manager.get_app_root", lambda: tmp_path)
+        (tmp_path / "config.json").write_text(
+            json.dumps({"pet_name": "KIBO", "tts_enabled": True}),
+            encoding="utf-8",
+        )
+
+        manager = FileConfigManager()
+        updated = manager.update_config({"tts_enabled": False, "buddy_skin": "capy"})
+
+        saved = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+        assert updated["tts_enabled"] is False
+        assert saved["tts_enabled"] is False
+        assert saved["buddy_skin"] == "capy"
+
+    def test_update_config_validates_values(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.core.config_manager.get_app_root", lambda: tmp_path)
+        manager = FileConfigManager()
+
+        updated = manager.update_config({"buddy_skin": "BAD SKIN!"})
+
+        assert updated["buddy_skin"] == DEFAULT_CONFIG["buddy_skin"]
 
 
 class TestNewConfigKeys:

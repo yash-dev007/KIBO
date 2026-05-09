@@ -28,6 +28,8 @@ ffmpeg.exe
 assets/webm/
 build/
 dist/
+frontend/node_modules/
+frontend/out/
 *.spec
 
 # Rust crate (deleted Phase 3C — restore if Rust perf work resumes)
