@@ -157,3 +157,53 @@ def test_build_frontmatter_roundtrip():
     assert fm.startswith("---")
     assert "id: abc" in fm
     assert "keywords: [a, b]" in fm
+
+
+# ── MemoryDashboard ──────────────────────────────────────────────────────
+
+from src.ai.memory_dashboard import MemoryDashboard
+
+
+def test_memory_dashboard_creates_file(tmp_path):
+    dash = MemoryDashboard()
+    output = tmp_path / "KIBO Dashboard.md"
+    facts = [
+        {"category": "fact", "content": "User likes Python", "source_session": "2026-05-09"},
+        {"category": "preference", "content": "Prefers dark mode", "source_session": "2026-05-09"},
+    ]
+    dash.rebuild(facts, output)
+    text = output.read_text("utf-8")
+    assert "KIBO Memory Dashboard" in text
+    assert "User likes Python" in text
+    assert "Prefers dark mode" in text
+    assert "Fact" in text
+
+
+def test_memory_dashboard_empty(tmp_path):
+    dash = MemoryDashboard()
+    output = tmp_path / "KIBO Dashboard.md"
+    dash.rebuild([], output)
+    text = output.read_text("utf-8")
+    assert "Total memories: 0" in text
+
+
+def test_delete_fact_emits_event_not_qt_signal(tmp_path, monkeypatch, bus):
+    """delete_fact must use event_bus.emit, not self.facts_updated.emit (Qt bug)."""
+    config = {"memory_enabled": True, "memory_model": "test", "ollama_base_url": "http://localhost:11434"}
+    monkeypatch.setattr("src.ai.memory_store.get_user_data_dir", lambda: tmp_path)
+    store = MemoryStore(config, event_bus=bus)
+
+    mem_dir = tmp_path / "vault" / "memories"
+    mem_dir.mkdir(parents=True, exist_ok=True)
+    fact_id = "test01"
+    (mem_dir / f"2026-05-09_fact_test_{fact_id}.md").write_text(
+        f"---\nid: {fact_id}\ncategory: fact\nkeywords: []\nextracted_at: 1000\nsource_session: 2026-05-09\n---\n\nTest\n",
+        "utf-8"
+    )
+
+    events = []
+    bus.on("facts_updated", lambda: events.append("facts_updated"))
+
+    result = store.delete_fact(fact_id)
+    assert result is True
+    assert "facts_updated" in events

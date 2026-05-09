@@ -23,6 +23,7 @@ import httpx
 from src.core.config_manager import get_user_data_dir
 from src.ai.memory_providers import get_provider as _get_memory_provider
 from src.ai.memory_io import parse_frontmatter as _parse_frontmatter, build_frontmatter as _build_frontmatter
+from src.ai.memory_dashboard import MemoryDashboard
 
 if TYPE_CHECKING:
     from src.api.event_bus import EventBus
@@ -48,6 +49,7 @@ class MemoryStore:
         db_path = get_user_data_dir() / "memories.db"
         self._provider = _get_memory_provider(config, db_path)
         self._migration_done = threading.Event()
+        self._dashboard = MemoryDashboard()
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -99,16 +101,6 @@ class MemoryStore:
     def get_all_facts(self) -> List[dict]:
         with self._lock:
             return self._load_all()
-
-    def delete_fact(self, fact_id: str) -> None:
-        with self._lock:
-            for p in self._memory_dir.glob(f"*{fact_id}*.md"):
-                p.unlink(missing_ok=True)
-            self._cache.pop(fact_id, None)
-            self._provider.delete([fact_id])
-        self._rebuild_dashboard()
-        if self._event_bus:
-            self._event_bus.emit("facts_updated")
 
     def retrieve_relevant(self, query: str, max_results: int = 5) -> List[dict]:
         """Find memories relevant to the query via the configured provider."""
@@ -167,7 +159,8 @@ class MemoryStore:
 
         self._provider.delete([fact_id])
         self._rebuild_dashboard()
-        self.facts_updated.emit()
+        if self._event_bus:
+            self._event_bus.emit("facts_updated")
         return True
 
     def update_fact(self, fact_id: str, changes: dict) -> bool:
@@ -218,7 +211,8 @@ class MemoryStore:
             extracted_at=int(meta.get("extracted_at", 0)),
         )
         self._rebuild_dashboard()
-        self.facts_updated.emit()
+        if self._event_bus:
+            self._event_bus.emit("facts_updated")
         return True
 
     def rebuild_index(self) -> None:
@@ -313,7 +307,8 @@ class MemoryStore:
 
             if stored:
                 self._rebuild_dashboard()
-                self.facts_updated.emit()
+                if self._event_bus:
+                    self._event_bus.emit("facts_updated")
 
         except Exception as e:
             logger.error("Memory extraction failed: %s", e)
@@ -384,36 +379,6 @@ class MemoryStore:
     # ── Dashboard generation ────────────────────────────────────────────
 
     def _rebuild_dashboard(self) -> None:
-        """Generate an Obsidian-friendly dashboard linking all memories."""
         with self._lock:
             facts = self._load_all()
-
-        grouped: Dict[str, List[dict]] = {}
-        for f in facts:
-            cat = f.get("category", "other")
-            grouped.setdefault(cat, []).append(f)
-
-        lines = [
-            "# 🐾 KIBO Memory Dashboard",
-            "",
-            f"> Auto-generated. Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            f"> Total memories: {len(facts)}",
-            "",
-        ]
-
-        category_icons = {
-            "preference": "⭐", "fact": "📌", "person": "👤",
-            "location": "📍", "task": "✅",
-        }
-
-        for cat in sorted(grouped.keys()):
-            icon = category_icons.get(cat, "📝")
-            lines.append(f"## {icon} {cat.title()}")
-            lines.append("")
-            for f in grouped[cat]:
-                content = f.get("content", "")[:80]
-                date = f.get("source_session", "unknown")
-                lines.append(f"- {content} *({date})*")
-            lines.append("")
-
-        self._dashboard_path.write_text("\n".join(lines), "utf-8")
+        self._dashboard.rebuild(facts, self._dashboard_path)
