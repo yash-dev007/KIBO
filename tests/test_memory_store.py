@@ -128,3 +128,32 @@ def test_facts_updated_event_emitted(tmp_path, monkeypatch, bus):
         "keywords": ["eventbus"],
     })
     assert len(emitted) == 1
+
+
+# ── memory_io helpers ────────────────────────────────────────────────────
+
+from src.ai.memory_io import parse_frontmatter, build_frontmatter
+
+
+def test_parse_frontmatter_extracts_meta_and_body():
+    text = "---\nid: abc\ncategory: fact\nkeywords: [foo, bar]\nextracted_at: 1000\n---\n\nSome body text\n"
+    meta, body = parse_frontmatter(text)
+    assert meta["id"] == "abc"
+    assert meta["category"] == "fact"
+    assert meta["keywords"] == ["foo", "bar"]
+    assert body == "Some body text"
+
+
+def test_parse_frontmatter_no_frontmatter():
+    text = "Just plain text"
+    meta, body = parse_frontmatter(text)
+    assert meta == {}
+    assert body == "Just plain text"
+
+
+def test_build_frontmatter_roundtrip():
+    meta = {"id": "abc", "category": "fact", "keywords": ["a", "b"], "extracted_at": 1000}
+    fm = build_frontmatter(meta)
+    assert fm.startswith("---")
+    assert "id: abc" in fm
+    assert "keywords: [a, b]" in fm

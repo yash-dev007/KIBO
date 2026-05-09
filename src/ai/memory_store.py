@@ -22,64 +22,12 @@ import httpx
 
 from src.core.config_manager import get_user_data_dir
 from src.ai.memory_providers import get_provider as _get_memory_provider
+from src.ai.memory_io import parse_frontmatter as _parse_frontmatter, build_frontmatter as _build_frontmatter
 
 if TYPE_CHECKING:
     from src.api.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
-
-# ── YAML frontmatter helpers (no PyYAML dependency) ─────────────────────
-
-_FM_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_LIST_ITEM = re.compile(r"^\s*-\s*(.+)$")
-
-
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Parse YAML frontmatter from markdown text. Returns (meta, body)."""
-    m = _FM_PATTERN.match(text)
-    if not m:
-        return {}, text
-
-    meta: dict = {}
-    for line in m.group(1).splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, val = line.partition(":")
-        key = key.strip()
-        val = val.strip()
-
-        # Parse inline list: [a, b, c]
-        if val.startswith("[") and val.endswith("]"):
-            items = [v.strip().strip("'\"") for v in val[1:-1].split(",") if v.strip()]
-            meta[key] = items
-        elif val.lower() in ("true", "false"):
-            meta[key] = val.lower() == "true"
-        elif val.isdigit():
-            meta[key] = int(val)
-        else:
-            meta[key] = val.strip("'\"")
-
-    body = text[m.end():]
-    return meta, body.strip()
-
-
-def _build_frontmatter(meta: dict) -> str:
-    """Build YAML frontmatter string from a dict."""
-    lines = ["---"]
-    for k, v in meta.items():
-        if isinstance(v, list):
-            items = ", ".join(str(i) for i in v)
-            lines.append(f"{k}: [{items}]")
-        elif isinstance(v, bool):
-            lines.append(f"{k}: {'true' if v else 'false'}")
-        else:
-            lines.append(f"{k}: {v}")
-    lines.append("---")
-    return "\n".join(lines)
-
 
 # ═══════════════════════════════════════════════════════════════════════
 
