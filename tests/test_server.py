@@ -158,3 +158,28 @@ def test_ws_chat_receives_response_done(bus, memory_store, config_manager, task_
     data = json.loads(msg)
     assert data["type"] == "response_done"
     assert data["text"] == "hello world"
+
+
+def test_brain_output_registered_on_state_bus(bus):
+    """create_app must subscribe brain_output to the state WebSocket."""
+    create_app(bus)
+    handlers = [h for h, _ in bus._handlers.get("brain_output", [])]
+    assert handlers, "No brain_output handler registered — Electron pet will not animate"
+    bus.shutdown()
+
+
+def test_chat_query_received_emitted_on_ws_message(bus, memory_store, config_manager):
+    """Sending a query via WebSocket must emit chat_query_received on the bus."""
+    from unittest.mock import MagicMock
+    ai_thread = MagicMock()
+    app = create_app(bus, config_manager=config_manager,
+                     memory_store=memory_store, ai_thread=ai_thread)
+
+    emitted = []
+    bus.on("chat_query_received", emitted.append)
+
+    with TestClient(app).websocket_connect("/ws/chat") as ws:
+        ws.send_text(json.dumps({"type": "query", "text": "hello"}))
+
+    assert emitted == ["hello"]
+    bus.shutdown()

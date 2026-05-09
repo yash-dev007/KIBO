@@ -120,6 +120,17 @@ def create_app(
                                                      notification_type=tp,
                                                      message=msg, priority=pri))
 
+    def _forward_brain_output(output) -> None:
+        _forward_state(
+            "brain_output",
+            state=output.state.name,
+            animation=output.animation_name,
+            speech=output.speech_text,
+            loop=output.loop,
+        )
+
+    event_bus.on("brain_output", _forward_brain_output)
+
     # ── REST endpoints ────────────────────────────────────────────────────
 
     @app.get("/health")
@@ -190,6 +201,7 @@ def create_app(
                 except json.JSONDecodeError:
                     continue
                 if msg.get("type") == "query" and ai_thread is not None:
+                    event_bus.emit("chat_query_received", msg.get("text", ""))
                     ai_thread.send_query(msg.get("text", ""))
                 elif msg.get("type") == "cancel" and ai_thread is not None:
                     ai_thread.cancel_current()
