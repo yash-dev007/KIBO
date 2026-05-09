@@ -1,0 +1,79 @@
+{
+  "name": "kibo-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron + React frontend for KIBO.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "bundle:python": "pyinstaller ../packaging/kibo_backend.spec --distpath ../dist/python --workpath ../build/pyinstaller --noconfirm",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:win:full": "npm run bundle:python && npm run dist:win",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "framer-motion": "^12.23.26",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.17",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7"
+  },
+  "build": {
+    "appId": "dev.yash.kibo",
+    "productName": "KIBO",
+    "asar": true,
+    "directories": {
+      "output": "../dist/electron"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../assets",
+        "to": "assets"
+      },
+      {
+        "from": "../dist/python/python_backend",
+        "to": "python_backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../config.example.json",
+        "to": "config.example.json"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "../assets/animations/skales/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
