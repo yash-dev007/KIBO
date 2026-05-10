@@ -13,9 +13,9 @@
 [![Stars](https://img.shields.io/github/stars/yash-dev007/KIBO?style=flat-square&color=FFD700&labelColor=1a1a1a)](https://github.com/yash-dev007/KIBO/stargazers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square&labelColor=1a1a1a)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=1a1a1a)](https://www.python.org/)
-[![PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?style=flat-square&labelColor=1a1a1a)](https://doc.qt.io/qtforpython/)
+[![Electron](https://img.shields.io/badge/UI-Electron%20%2B%20React-47848F?style=flat-square&logo=electron&logoColor=white&labelColor=1a1a1a)](https://www.electronjs.org/)
 [![LLM: Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Ollama-F54F29?style=flat-square&labelColor=1a1a1a)](https://console.groq.com)
-[![Tests](https://img.shields.io/badge/tests-313%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
+[![Tests](https://img.shields.io/badge/tests-254%20passing-brightgreen?style=flat-square&labelColor=1a1a1a)]()
 
 <br/>
 
@@ -187,10 +187,36 @@ pip install torch torchaudio   # enables silero-vad end-of-speech detection
 
 Then set `stt_vad_provider` to `"silero_local"` in Settings or `config.json`. KIBO defaults to `"rms"` so normal runtime does not fetch VAD assets through `torch.hub`.
 
-### 5. Run
+### 5. Install frontend dependencies
 
 ```bash
-uv run python main.py
+cd frontend
+npm install
+cd ..
+```
+
+### 6. Run
+
+**Option A — Windows launcher (recommended):**
+
+```batch
+KIBO.bat
+```
+
+This opens the Python backend in a dedicated terminal window, waits for it to start, then launches the Electron frontend.
+
+**Option B — Two separate terminals:**
+
+```bash
+# Terminal 1 — Python backend
+uv run python -m src.api.main
+```
+
+```powershell
+# Terminal 2 — Electron frontend (PowerShell)
+cd frontend
+$env:KIBO_SKIP_PYTHON_BRIDGE=1
+npm run dev
 ```
 
 The **first-run onboarding wizard** will guide you through provider selection and privacy consent before the pet appears.
@@ -297,7 +323,7 @@ All numbers on Ryzen 5 5600 + 16 GB RAM, Windows 11, Groq + Piper + base.en Whis
 | Memory embedding (fastembed bge-small) | ~15 ms / fact |
 | CPU at idle (animations running) | < 2 % |
 | Peak RAM | ~380 MB (models loaded) |
-| Test suite (313 passed) | ~30 s |
+| Test suite (254 passed) | ~20 s |
 
 ---
 
@@ -309,21 +335,19 @@ src/
 │   ├── llm_providers/         # Groq + Ollama provider selection
 │   ├── tts_providers/         # Piper neural + pyttsx3 provider selection
 │   ├── memory_providers/      # Vector sqlite-vec + lexical fallback
-│   ├── ai_client.py           # Streaming LLM + inline memory tool calls
+│   ├── ai_client.py           # Streaming LLM + inline memory tool calls (AIThread)
 │   ├── brain.py               # Pet state machine (IDLE/THINKING/TALKING/ACTING/HAPPY)
 │   ├── prompt_builder.py      # Centralized system prompt assembly with personality contract
 │   ├── memory_store.py        # Fact storage — Markdown vault + provider index
+│   ├── memory_io.py           # YAML frontmatter parse/build helpers
+│   ├── memory_dashboard.py    # Obsidian dashboard generator
 │   ├── sentence_buffer.py     # Token stream → sentences → TTS queue
 │   ├── tts_manager.py         # TTS queue + sentence-level streaming
 │   └── voice_listener.py      # Whisper STT + RMS / optional silero endpointing
-├── ui/
-│   ├── animation_engine.py    # VP9 alpha WebM player (WMF, zero CPU overhead)
-│   ├── clip_recorder.py       # 5-second ring buffer → animated WebP
-│   ├── onboarding_window.py   # First-run 6-page setup wizard
-│   ├── chat_window.py         # Streaming chat transcript UI
-│   ├── settings_window.py     # Settings: General, Voice, AI, Notifications, Appearance, Memory, Data
-│   ├── tray_manager.py        # System tray icon + context menu (Snooze, Settings, Quit)
-│   └── ui_manager.py          # Transparent frameless window + speech bubble overlay
+├── api/
+│   ├── event_bus.py           # Thread-safe pub/sub with async_dispatch support
+│   ├── server.py              # FastAPI app — REST + WebSocket endpoints
+│   └── main.py                # Backend entry point — wires components, starts uvicorn (port 8765)
 ├── system/
 │   ├── proactive_engine.py    # Tick loop — evaluates trigger conditions, emits events
 │   ├── proactive_policy.py    # RouterState + ProactivePolicy (injectable clock, pure logic)
@@ -331,16 +355,29 @@ src/
 │   ├── notification_router.py # State machine — daily cap, snooze, cooldowns, persistence
 │   ├── provider_health.py     # Health checks for Groq, Piper, and Ollama
 │   ├── diagnostics.py         # Redacted diagnostics export
-│   ├── hotkey_listener.py     # Global hotkeys on a QThread
+│   ├── hotkey_listener.py     # Global hotkeys
 │   ├── system_monitor.py      # CPU / battery / idle sensors
 │   ├── calendar_manager.py    # Google Calendar sync (opt-in)
 │   └── task_runner.py         # Background task management
 └── core/
     └── config_manager.py      # Load + validate config.json, returns immutable MappingProxyType
-main.py                        # Entry point — onboarding check, Qt app, signal wiring
+main.py                        # Thin entry point — delegates to src.api.main
+frontend/
+├── electron/
+│   └── main/
+│       ├── index.ts           # Electron main process
+│       ├── python-bridge.ts   # Spawns / connects to Python backend via HTTP + WebSocket
+│       ├── chat-window.ts     # Chat transcript window
+│       ├── pet-window.ts      # Transparent frameless pet overlay
+│       ├── settings-window.ts # Settings window
+│       ├── tray.ts            # System tray icon + context menu
+│       ├── shortcuts.ts       # Global hotkeys
+│       └── window-state.ts    # Window position persistence
+└── src/
+    └── ...                    # React + TypeScript UI components
 scripts/
 ├── preprocess_alpha.py        # One-time WebM → VP9 alpha batch converter (requires ffmpeg)
-└── profile_latency.py         # Phase 3 TTFS profiler (mock baseline or configured real providers)
+└── profile_latency.py         # TTFS profiler (mock baseline or configured real providers)
 ```
 
 ### Provider abstraction
@@ -383,36 +420,38 @@ uv run python -m pytest tests/ -q
 Current baseline:
 
 ```text
-313 passed in 30.56s
+254 passed in 19.86s
 ```
 
-**313 passing tests** across 22 modules - unit, integration, and component coverage:
+**254 passing tests** across 25 modules - unit, integration, and component coverage:
 
 | Module | Coverage |
 |---|---|
 | `test_ai_client.py` | Streaming LLM, inline memory tool calls, provider abstraction |
+| `test_api_main.py` | Headless backend composition, component wiring |
 | `test_brain.py` | Pet state machine transitions |
-| `test_phase3_pipeline.py` | End-to-end streaming conversation pipeline, cancellation, memory tool emission |
-| `test_prompt_builder.py` | Personality contract injection, snapshot tests |
-| `test_proactive_engine.py` | ProactivePolicy rules, daily cap, quiet hours, snooze, cooldowns |
-| `test_notification_router.py` | Routing, persistence, snooze API, category disable |
-| `test_config.py` | Validation, immutability, malformed JSON recovery, onboarding fields |
-| `test_provider_health.py` | Groq key format, Piper file existence, Ollama reachability (all offline-safe) |
-| `test_memory_store.py` | Fact storage, retention cap, vault compatibility |
-| `test_vector_memory.py` | Semantic kNN recall, index cleanup |
-| `test_sentence_buffer.py` | Token → sentence splitting, min-chars, flush |
-| `test_animation_engine.py` | Asset resolution, skin selection |
 | `test_calendar_manager.py` | Event parsing, lookahead window |
-| `test_task_runner.py` | Task lifecycle |
-| `test_onboarding_window.py` | Config persistence, provider choice, headless Qt safety |
-| `test_tts_manager.py` | Streaming TTS queue, interruption, stale chunk prevention |
-| `test_voice_listener.py` | Whisper/VAD loading, endpoint fallback, transcription behavior |
-| `test_hotkey_listener.py` | Hotkey registration, rebind, scoped cleanup |
+| `test_config.py` | Validation, immutability, malformed JSON recovery, onboarding fields |
 | `test_diagnostics.py` | Redaction, diagnostics export, memory-content exclusion |
+| `test_event_bus.py` | Pub/sub emit, async_dispatch, off() cleanup |
+| `test_hotkey_listener.py` | Hotkey registration, rebind, scoped cleanup |
+| `test_memory_store.py` | Fact storage, retention cap, vault compatibility |
 | `test_mock_provider.py` | Configurable mock LLM streaming |
+| `test_notification_router.py` | Routing, persistence, snooze API, category disable |
+| `test_periodic_thread.py` | Recurring callback scheduling, stop/join safety |
 | `test_personality_regression.py` | Long-context personality and safety behavior |
+| `test_phase3_pipeline.py` | End-to-end streaming conversation pipeline, cancellation, memory tool emission |
+| `test_proactive_engine.py` | ProactivePolicy rules, daily cap, quiet hours, snooze, cooldowns |
+| `test_prompt_builder.py` | Personality contract injection, snapshot tests |
+| `test_provider_health.py` | Groq key format, Piper file existence, Ollama reachability (all offline-safe) |
 | `test_safety.py` | Self-harm, boundary, and prohibited-response guards |
-| `test_settings_window.py` | Settings tabs, reset controls, device parsing |
+| `test_sentence_buffer.py` | Token → sentence splitting, min-chars, flush |
+| `test_server.py` | FastAPI REST + WebSocket endpoints |
+| `test_system_monitor.py` | CPU/battery/idle sensor polling, thread overlap safety |
+| `test_task_runner.py` | Task lifecycle |
+| `test_tts_manager.py` | Streaming TTS queue, interruption, stale chunk prevention |
+| `test_vector_memory.py` | Semantic kNN recall, index cleanup |
+| `test_voice_listener.py` | Whisper/VAD loading, endpoint fallback, transcription behavior |
 
 ### Latency profiling
 
@@ -478,7 +517,7 @@ Issues and PRs are welcome. Please open an issue first for anything larger than 
 
 1. Fork → create a feature branch
 2. Write tests first (TDD: red → green → refactor)
-3. `uv run python -m pytest tests/ -q` must pass (all 313 passing tests)
+3. `uv run python -m pytest tests/ -q` must pass (all 254 passing tests)
 4. Submit a PR with a clear description of what changed and why
 
 ---
