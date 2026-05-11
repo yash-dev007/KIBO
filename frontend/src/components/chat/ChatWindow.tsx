@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Settings, X } from "lucide-react";
+import { Bot, Maximize, Settings, X } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { InputBar } from "./InputBar";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -81,85 +81,98 @@ export function ChatWindow() {
   }
 
   const isConnected = connectionState === "open";
+  const isEmpty = messages.length === 0 && !streamingText && !error;
 
   return (
-    <main className="flex min-h-screen flex-col bg-kibo-bg text-kibo-text">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-white/5 px-4 py-2.5">
-        <div className="flex items-center gap-2.5">
+    <main className="flex h-screen flex-col bg-kibo-bg text-kibo-text">
+      {/* Draggable header */}
+      <header className="drag-region flex shrink-0 items-center justify-between px-6 py-4">
+        <div className="no-drag flex items-center gap-3">
           <span
-            className={`h-1.5 w-1.5 rounded-full transition-colors ${
-              isConnected ? "bg-kibo-accent shadow-[0_0_6px_var(--color-kibo-accent)]" : "bg-red-500/70"
+            className={`h-2 w-2 rounded-full transition-all ${
+              isConnected
+                ? "bg-kibo-accent shadow-[0_0_8px_var(--color-kibo-accent)]"
+                : "bg-[oklch(60%_0.18_20)] shadow-[0_0_8px_oklch(60%_0.18_20)]"
             }`}
           />
-          <span className="font-mono text-xs font-semibold tracking-[0.2em] text-kibo-text uppercase">
-            KIBO
-          </span>
-          <span className="rounded border border-kibo-accent/20 px-1.5 py-px font-mono text-[10px] tracking-wider text-kibo-accent/50 uppercase">
-            AI
-          </span>
+          <span className="font-display text-xl italic tracking-tight text-kibo-text">KIBO</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="no-drag flex gap-1">
           <button
-            className="grid h-7 w-7 place-items-center rounded text-kibo-dim transition-colors hover:text-kibo-text"
+            className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
+            type="button"
+            aria-label="Maximize"
+            onClick={() => window.kibo?.app.toggleMaximize()}
+          >
+            <Maximize size={20} />
+          </button>
+          <button
+            className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
             type="button"
             aria-label="Settings"
             onClick={() => window.kibo?.app.showSettings()}
           >
-            <Settings size={13} />
+            <Settings size={20} />
           </button>
           <button
-            className="grid h-7 w-7 place-items-center rounded text-kibo-dim transition-colors hover:text-kibo-text"
+            className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
             type="button"
             aria-label="Close"
-            onClick={() => window.kibo?.app.hideCurrentWindow()}
+            onClick={() => window.kibo?.app.quit()}
           >
-            <X size={13} />
+            <X size={20} />
           </button>
         </div>
       </header>
 
-      {/* Messages */}
+      {/* Scrollable chat canvas — pb-[120px] keeps content above floating input */}
       <section
         ref={scrollRef}
-        className="kibo-scroll flex-1 space-y-4 overflow-auto p-4"
+        className="chat-scroll flex-1 overflow-y-auto px-6 pb-4 pt-2"
       >
-        {messages.length === 0 && !streamingText ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <p className="font-mono text-xs tracking-[0.3em] text-kibo-dim/60 uppercase">
-              session started
-            </p>
-            <p className="font-mono text-[11px] text-kibo-dim/40">
-              › ask anything
-            </p>
+        {isEmpty ? (
+          <div className="animate-fade-in flex h-full flex-col items-center justify-center gap-4">
+            <Bot size={64} strokeWidth={1.5} className="text-kibo-border" />
+            <p className="text-lg tracking-wide text-kibo-dim">ask anything</p>
           </div>
-        ) : null}
+        ) : (
+          <div className="mx-auto flex w-full max-w-[800px] flex-col gap-6">
+            {messages.map((message, index) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                isFirstInGroup={
+                  message.role !== "user" &&
+                  (index === 0 || messages[index - 1].role === "user")
+                }
+              />
+            ))}
 
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
+            {streamingText ? (
+              <div className="animate-slide-up flex flex-col items-start gap-2">
+                <div className="flex items-center gap-2 px-2 text-sm text-kibo-dim">
+                  <Bot size={16} />
+                  <span>KIBO</span>
+                </div>
+                <div className="max-w-[85%] rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-6 py-4 text-base leading-relaxed text-kibo-text shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
+                  {streamingText}
+                  <span className="cursor-blink ml-0.5 inline-block h-3.5 w-0.5 bg-kibo-accent align-middle" />
+                </div>
+              </div>
+            ) : null}
 
-        {streamingText ? (
-          <div className="flex justify-start">
-            <div className="max-w-[78%]">
-              <p className="mb-0.5 font-mono text-[10px] tracking-widest text-kibo-accent/60 uppercase">◈ kibo</p>
-              <p className="border-l-2 border-kibo-accent/30 pl-3 text-sm leading-relaxed text-kibo-text">
-                {streamingText}
-                <span className="cursor-blink ml-0.5 inline-block h-3 w-0.5 bg-kibo-accent align-middle" />
-              </p>
-            </div>
+            {error ? (
+              <div className="animate-slide-up flex flex-col items-start">
+                <div className="rounded-[24px] rounded-bl-[6px] border border-red-200 bg-red-50 px-6 py-4 text-base text-red-600">
+                  {error}
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : null}
-
-        {error ? (
-          <div className="flex justify-start">
-            <p className="border-l-2 border-red-500/50 pl-3 font-mono text-xs text-red-400/80">
-              ✗ {error}
-            </p>
-          </div>
-        ) : null}
+        )}
       </section>
 
+      {/* Floating input — absolutely anchored to bottom of main */}
       <InputBar disabled={!isConnected} onSend={send} />
     </main>
   );

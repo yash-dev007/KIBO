@@ -3,7 +3,7 @@
     "ai_enabled": true,
     "activation_hotkey": "ctrl+k",
     "ollama_base_url": "http://localhost:11434",
-    "ollama_model": "qwen2.5-coder:7b",
+    "ollama_model": "llama3.2:3b",
     "ollama_timeout_s": 60,
     "llm_provider": "auto",
     "groq_api_key_env": "GROQ_API_KEY",

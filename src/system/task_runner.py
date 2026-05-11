@@ -31,6 +31,11 @@ class TaskRunner:
         self._tasks_lock = threading.Lock()
         self._tasks_cache: List[dict] = self._load_tasks_from_disk()
 
+    def on_config_changed(self, new_config: dict) -> None:
+        self._config = new_config
+        self._base_url = new_config.get("ollama_base_url", "http://localhost:11434")
+        self._model = new_config.get("ollama_model", "qwen2.5-coder:7b")
+
     def add_task(self, title: str, description: str, requires_approval: bool = False, source: str = "user") -> str:
         tasks = self.get_tasks()
         task_id = str(uuid.uuid4())

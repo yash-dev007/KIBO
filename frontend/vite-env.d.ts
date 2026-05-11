@@ -5,6 +5,7 @@ interface KiboApi {
     showChat: () => void;
     showSettings: () => void;
     hideCurrentWindow: () => void;
+    toggleMaximize: () => void;
     quit: () => void;
     onShortcut: (handler: (event: { type: "talk" | "clip" }) => void) => () => void;
   };

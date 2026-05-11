@@ -63,6 +63,13 @@ def create_backend(config: dict) -> dict:
     bus.on("task_blocked", proactive_engine.on_task_blocked)
     bus.on("memory_fact_extracted", memory_store.add_fact_inline)
 
+    # Config updates
+    bus.on("config_changed", brain.on_config_changed)
+    bus.on("config_changed", system_monitor.on_config_changed)
+    bus.on("config_changed", proactive_engine.on_config_changed)
+    bus.on("config_changed", notification_router.on_config_changed)
+    bus.on("config_changed", memory_store.on_config_changed)
+
     # ── AI wiring (when enabled) ──────────────────────────────────────────
     ai_thread = None
     tts_thread = None
@@ -82,6 +89,9 @@ def create_backend(config: dict) -> dict:
         voice_thread = VoiceThread(config, event_bus=bus)
         hotkey_thread = HotkeyThread(config, event_bus=bus)
         sentence_buffer = SentenceBuffer(event_bus=bus)
+
+        # Config updates for AI components
+        bus.on("config_changed", ai_thread.on_config_changed)
 
         # Hotkey → brain + voice
         bus.on("hotkey_pressed", brain.on_listening_started)

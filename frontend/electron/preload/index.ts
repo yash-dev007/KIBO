@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("kibo", {
     showChat: () => ipcRenderer.invoke("app:show-chat"),
     showSettings: () => ipcRenderer.invoke("app:show-settings"),
     hideCurrentWindow: () => ipcRenderer.invoke("app:hide-current-window"),
+    toggleMaximize: () => ipcRenderer.invoke("app:toggle-maximize"),
     quit: () => ipcRenderer.invoke("app:quit"),
     onShortcut: (handler: (event: { type: "talk" | "clip" }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: { type: "talk" | "clip" }) =>

@@ -51,6 +51,12 @@ class MemoryStore:
         self._migration_done = threading.Event()
         self._dashboard = MemoryDashboard()
 
+    def on_config_changed(self, new_config: dict) -> None:
+        with self._lock:
+            self._config = new_config
+        # Note: Changing memory_provider dynamically requires restarting the app
+        # because vector DB init is expensive. We just update self._config.
+
     # ── Public API ──────────────────────────────────────────────────────
 
     def extract_facts_async(self, conversation_text: str) -> None:

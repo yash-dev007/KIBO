@@ -6,6 +6,7 @@ function fallbackApi(): KiboApi {
       showChat: () => undefined,
       showSettings: () => undefined,
       hideCurrentWindow: () => undefined,
+      toggleMaximize: () => undefined,
       quit: () => undefined,
       onShortcut: () => () => undefined,
     },

@@ -13,8 +13,8 @@ export function createSettingsWindow({ preload, shouldQuit, url }: WindowOptions
     minWidth: 720,
     minHeight: 560,
     show: false,
-    title: "KIBO Settings",
-    backgroundColor: "#1e1e2e",
+    frame: false,
+    backgroundColor: "#faf8f5",
     webPreferences: {
       preload,
       contextIsolation: true,

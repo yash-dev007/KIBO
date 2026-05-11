@@ -127,6 +127,16 @@ ipcMain.handle("app:show-settings", () => showSettings());
 ipcMain.handle("app:hide-current-window", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.hide();
 });
+ipcMain.handle("app:toggle-maximize", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  }
+});
 ipcMain.handle("app:quit", () => app.quit());
 ipcMain.handle("backend:status", () => bridge.status());
 ipcMain.handle("backend:health", () => bridge.health());

@@ -146,7 +146,8 @@ def create_app(
     @app.post("/settings")
     async def post_settings(body: dict):
         if config_manager is not None:
-            config_manager.update_config(body)
+            new_config = config_manager.update_config(body)
+            event_bus.emit("config_changed", new_config)
         return {"ok": True}
 
     @app.get("/memory")

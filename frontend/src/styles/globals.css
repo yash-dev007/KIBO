@@ -1,14 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-kibo-bg: #090910;
-  --color-kibo-panel: #0c0c16;
-  --color-kibo-accent: #7dde6a;
-  --color-kibo-accent-dim: rgba(125, 222, 106, 0.2);
-  --color-kibo-text: #dde8d0;
-  --color-kibo-dim: #4a5a42;
-  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  /* Warm & Soft — KIBO Design System v0.2 */
+  --color-kibo-bg:          oklch(97% 0.018 70);
+  --color-kibo-surface:     oklch(99% 0.008 70);
+  --color-kibo-accent:      oklch(64% 0.13 28);
+  --color-kibo-accent-soft: oklch(64% 0.13 28 / 0.12);
+  --color-kibo-accent-dim:  oklch(64% 0.13 28 / 0.06);
+  --color-kibo-accent-glow: oklch(64% 0.13 28 / 0.25);
+  --color-kibo-text:        oklch(22% 0.02 50);
+  --color-kibo-dim:         oklch(50% 0.018 50);
+  --color-kibo-border:      oklch(90% 0.014 70);
+
+  --font-display: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+  --font-sans:    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
 }
 
 html,
@@ -34,7 +40,6 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Custom scrollbar */
 .kibo-scroll::-webkit-scrollbar {
   width: 3px;
 }
@@ -42,16 +47,46 @@ body {
   background: transparent;
 }
 .kibo-scroll::-webkit-scrollbar-thumb {
-  background: rgba(125, 222, 106, 0.2);
+  background: var(--color-kibo-border);
   border-radius: 99px;
 }
 .kibo-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(125, 222, 106, 0.4);
+  background: var(--color-kibo-dim);
+}
+
+/* Chat scrollbar — wider with border gap trick */
+.chat-scroll::-webkit-scrollbar { width: 8px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-kibo-border);
+  border-radius: 9999px;
+  border: 2px solid var(--color-kibo-bg);
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-kibo-dim);
+}
+
+/* Message / empty state animations */
+@keyframes fade-in {
+  from { opacity: 0; filter: blur(4px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+.animate-fade-in { animation: fade-in 0.8s ease-out; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* Ensure font-display utility is emitted even if Tailwind's --font-* mapping is ambiguous */
+@layer utilities {
+  .font-display { font-family: var(--font-display); }
 }
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50%       { opacity: 0; }
 }
 .cursor-blink {
   animation: blink 1.2s step-end infinite;

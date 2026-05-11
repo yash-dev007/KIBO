@@ -13,8 +13,8 @@ export function createChatWindow({ preload, shouldQuit, url }: WindowOptions): B
     minWidth: 380,
     minHeight: 480,
     show: false,
-    title: "KIBO Chat",
-    backgroundColor: "#1e1e2e",
+    frame: false,
+    backgroundColor: "#faf8f5",
     webPreferences: {
       preload,
       contextIsolation: true,

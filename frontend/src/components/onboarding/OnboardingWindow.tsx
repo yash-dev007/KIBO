@@ -32,14 +32,14 @@ export function OnboardingWindow() {
 
   return (
     <main className="grid min-h-screen grid-cols-[220px_1fr] bg-kibo-bg text-kibo-text">
-      <aside className="border-r border-white/10 p-4">
-        <h1 className="px-2 py-3 text-base font-semibold">KIBO</h1>
+      <aside className="border-r border-kibo-border p-4">
+        <h1 className="px-2 py-3 font-display text-lg italic text-kibo-text">KIBO</h1>
         <ol className="grid gap-1">
           {steps.map(({ title, icon: StepIcon }, stepIndex) => (
             <li key={title}>
               <button
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${
-                  stepIndex === index ? "bg-white/10 text-kibo-accent" : "text-kibo-text/75"
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-kibo-accent-dim ${
+                  stepIndex === index ? "bg-kibo-accent-soft text-kibo-accent" : "text-kibo-dim"
                 }`}
                 type="button"
                 onClick={() => setIndex(stepIndex)}
@@ -52,21 +52,23 @@ export function OnboardingWindow() {
         </ol>
       </aside>
       <section className="flex min-w-0 flex-col">
-        <header className="border-b border-white/10 px-8 py-6">
+        <header className="border-b border-kibo-border px-8 py-6">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-md bg-kibo-accent text-black">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-kibo-accent text-white">
               <Icon size={20} />
             </span>
             <h2 className="text-2xl font-semibold">{step.title}</h2>
           </div>
         </header>
         <div className="grid max-w-2xl gap-5 p-8">
-          {index === 0 ? <p className="text-kibo-text/75">Set up your desktop companion.</p> : null}
+          {index === 0 ? (
+            <p className="text-kibo-dim">Set up your desktop companion.</p>
+          ) : null}
           {index === 1 ? (
-            <label className="block text-sm">
+            <label className="block text-sm text-kibo-text">
               LLM provider
               <select
-                className="mt-2 h-10 w-full rounded-md border border-white/10 bg-black/40 px-3"
+                className="mt-2 h-10 w-full rounded-lg border border-kibo-border bg-kibo-bg px-3 text-sm text-kibo-text outline-none transition focus:border-kibo-accent focus:shadow-[0_0_0_3px_var(--color-kibo-accent-soft)]"
                 value={String(settings.llm_provider ?? "mock")}
                 onChange={(event) => updateSetting("llm_provider", event.target.value)}
               >
@@ -77,7 +79,7 @@ export function OnboardingWindow() {
             </label>
           ) : null}
           {index === 2 ? (
-            <label className="flex items-center justify-between rounded-md bg-white/5 px-3 py-3 text-sm">
+            <label className="flex items-center justify-between rounded-lg border border-kibo-border bg-kibo-surface px-3 py-3 text-sm text-kibo-text">
               TTS enabled
               <input
                 checked={Boolean(settings.tts_enabled ?? true)}
@@ -87,7 +89,7 @@ export function OnboardingWindow() {
             </label>
           ) : null}
           {index === 3 ? (
-            <label className="flex items-center justify-between rounded-md bg-white/5 px-3 py-3 text-sm">
+            <label className="flex items-center justify-between rounded-lg border border-kibo-border bg-kibo-surface px-3 py-3 text-sm text-kibo-text">
               Memory enabled
               <input
                 checked={Boolean(settings.memory_enabled ?? true)}
@@ -98,29 +100,29 @@ export function OnboardingWindow() {
           ) : null}
           {index === 4 ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm">
+              <label className="block text-sm text-kibo-text">
                 Talk
                 <input
-                  className="mt-2 h-10 w-full rounded-md border border-white/10 bg-black/40 px-3"
+                  className="mt-2 h-10 w-full rounded-lg border border-kibo-border bg-kibo-bg px-3 text-sm outline-none transition focus:border-kibo-accent focus:shadow-[0_0_0_3px_var(--color-kibo-accent-soft)]"
                   value={String(settings.activation_hotkey ?? "ctrl+k")}
                   onChange={(event) => updateSetting("activation_hotkey", event.target.value)}
                 />
               </label>
-              <label className="block text-sm">
+              <label className="block text-sm text-kibo-text">
                 Clip
                 <input
-                  className="mt-2 h-10 w-full rounded-md border border-white/10 bg-black/40 px-3"
+                  className="mt-2 h-10 w-full rounded-lg border border-kibo-border bg-kibo-bg px-3 text-sm outline-none transition focus:border-kibo-accent focus:shadow-[0_0_0_3px_var(--color-kibo-accent-soft)]"
                   value={String(settings.clip_hotkey ?? "ctrl+alt+k")}
                   onChange={(event) => updateSetting("clip_hotkey", event.target.value)}
                 />
               </label>
             </div>
           ) : null}
-          {index === 5 ? <p className="text-kibo-text/75">KIBO is ready.</p> : null}
+          {index === 5 ? <p className="text-kibo-dim">KIBO is ready.</p> : null}
         </div>
-        <footer className="mt-auto flex items-center justify-between border-t border-white/10 p-4">
+        <footer className="mt-auto flex items-center justify-between border-t border-kibo-border p-4">
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-white/10 px-3 text-sm disabled:opacity-40"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-kibo-border px-3 text-sm text-kibo-dim transition hover:bg-kibo-accent-dim disabled:opacity-40"
             type="button"
             disabled={index === 0}
             onClick={() => setIndex((current) => Math.max(0, current - 1))}
@@ -129,7 +131,7 @@ export function OnboardingWindow() {
             Back
           </button>
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-kibo-accent px-3 text-sm text-black"
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-kibo-accent px-4 text-sm text-white transition hover:brightness-105"
             type="button"
             onClick={index === steps.length - 1 ? finish : () => setIndex((current) => current + 1)}
           >
