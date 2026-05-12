@@ -7,6 +7,22 @@ import { publishPetState } from "@/hooks/useWindowStateSync";
 import { useChatStore } from "@/stores/chatStore";
 import { usePetStore } from "@/stores/petStore";
 
+function TypingIndicator() {
+  return (
+    <div className="animate-slide-up flex flex-col items-start gap-2">
+      <div className="flex items-center gap-2 px-2 text-sm text-kibo-dim">
+        <Bot size={16} />
+        <span>KIBO</span>
+      </div>
+      <div className="flex items-center gap-1.5 rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-5 py-[18px] shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
+        <span className="animate-typing-dot h-2 w-2 rounded-full bg-kibo-accent" style={{ animationDelay: "0ms" }} />
+        <span className="animate-typing-dot h-2 w-2 rounded-full bg-kibo-accent" style={{ animationDelay: "200ms" }} />
+        <span className="animate-typing-dot h-2 w-2 rounded-full bg-kibo-accent" style={{ animationDelay: "400ms" }} />
+      </div>
+    </div>
+  );
+}
+
 type ChatEvent =
   | { type: "response_chunk"; text: string }
   | { type: "response_done"; text: string }
@@ -82,6 +98,11 @@ export function ChatWindow() {
 
   const isConnected = connectionState === "open";
   const isEmpty = messages.length === 0 && !streamingText && !error;
+  const isLoading =
+    messages.length > 0 &&
+    messages[messages.length - 1].role === "user" &&
+    !streamingText &&
+    !error;
 
   return (
     <main className="flex h-screen flex-col bg-kibo-bg text-kibo-text">
@@ -147,6 +168,8 @@ export function ChatWindow() {
                 }
               />
             ))}
+
+            {isLoading ? <TypingIndicator /> : null}
 
             {streamingText ? (
               <div className="animate-slide-up flex flex-col items-start gap-2">

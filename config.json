@@ -52,7 +52,7 @@
     "memory_provider": "auto",
     "memory_top_k": 5,
     "memory_extraction_inline": true,
-    "proactive_enabled": false,
+    "proactive_enabled": true,
     "quiet_hours_start": 22,
     "quiet_hours_end": 7,
     "notification_types": {

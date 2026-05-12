@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Brain,
@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { publishSettingsState } from "@/hooks/useWindowStateSync";
-import { apiGet, apiPost } from "@/lib/kiboApi";
+import { apiPost } from "@/lib/kiboApi";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 type TabId = "general" | "voice" | "ai" | "notifications" | "appearance" | "memory" | "data";
@@ -44,10 +44,10 @@ function asBoolean(value: unknown, fallback = false): boolean {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-sm text-kibo-text">
-      <span>{label}</span>
+    <div className="text-sm text-kibo-text">
+      <span className="block">{label}</span>
       <div className="mt-2">{children}</div>
-    </label>
+    </div>
   );
 }
 
@@ -115,7 +115,19 @@ function CustomSelect({
   onChange: (value: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const selected = options.find((o) => o.value === value) || options[0];
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((o) => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isOpen]);
 
   const handleSelect = (val: string) => {
     setIsOpen(false);
@@ -123,11 +135,11 @@ function CustomSelect({
   };
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
         type="button"
         className="flex h-11 w-full items-center justify-between rounded-xl border border-kibo-border bg-kibo-bg px-4 text-sm text-kibo-text outline-none transition focus:border-kibo-accent focus:shadow-[0_0_0_3px_var(--color-kibo-accent-soft)]"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((prev) => !prev)}
       >
         <span>{selected.label}</span>
         <ChevronDown
@@ -137,34 +149,22 @@ function CustomSelect({
       </button>
 
       {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/0"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsOpen(false);
-            }}
-          />
-          <div className="animate-slide-up absolute top-full z-50 mt-2 w-full overflow-hidden rounded-2xl border border-kibo-border bg-kibo-surface p-1 shadow-2xl">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`flex w-full items-center px-4 py-2.5 text-left text-sm transition-colors hover:bg-kibo-accent-soft ${
-                  value === opt.value
-                    ? "bg-kibo-accent-dim font-medium text-kibo-accent"
-                    : "text-kibo-text"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelect(opt.value);
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </>
+        <div className="animate-slide-up absolute top-full z-50 mt-2 w-full overflow-hidden rounded-2xl border border-kibo-border bg-kibo-surface p-1 shadow-2xl">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`flex w-full items-center px-4 py-2.5 text-left text-sm transition-colors hover:bg-kibo-accent-soft ${
+                value === opt.value
+                  ? "bg-kibo-accent-dim font-medium text-kibo-accent"
+                  : "text-kibo-text"
+              }`}
+              onClick={() => handleSelect(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -175,12 +175,7 @@ export function SettingsWindow() {
   const [saved, setSaved] = useState(false);
   const skin = useSettingsStore((state) => state.skin);
   const settings = useSettingsStore((state) => state.settings);
-  const setSettings = useSettingsStore((state) => state.setSettings);
   const updateSetting = useSettingsStore((state) => state.updateSetting);
-
-  useEffect(() => {
-    apiGet<Record<string, unknown>>("/settings", {}).then(setSettings);
-  }, [setSettings]);
 
   const notificationTypes = useMemo(
     () =>
@@ -395,7 +390,7 @@ export function SettingsWindow() {
               className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
               type="button"
               aria-label="Close"
-              onClick={() => window.kibo?.app.quit()}
+              onClick={() => window.kibo?.app.hideCurrentWindow()}
             >
               <X size={20} />
             </button>
