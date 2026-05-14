@@ -53,16 +53,26 @@ DEFAULT_CONFIG: dict = {
     "ollama_model": "qwen2.5-coder:7b",
     "ollama_timeout_s": 60.0,
     "llm_provider": "auto",
+    "groq_api_key": "",
     "groq_api_key_env": "GROQ_API_KEY",
     "groq_model": "llama-3.3-70b-versatile",
     "groq_timeout_s": 30.0,
+    "openrouter_api_key": "",
+    "openrouter_model": "meta-llama/llama-3.3-70b-instruct",
+    "openrouter_timeout_s": 60.0,
+    "nvidia_api_key": "",
+    "nvidia_model": "meta/llama-3.3-70b-instruct",
+    "nvidia_timeout_s": 60.0,
+    "google_api_key": "",
+    "google_model": "gemini-2.0-flash",
+    "google_timeout_s": 60.0,
     "system_prompt": (
         "You are KIBO, a helpful virtual pet assistant who lives on the user's desktop. "
         "Be concise, friendly, and slightly playful. Keep responses to 2-3 sentences "
         "unless the user asks for more detail."
     ),
     "conversation_history_limit": 10,
-    "tts_enabled": True,
+    "tts_enabled": False,
     "tts_provider": "auto",
     "tts_rate": 175,
     "piper_model": "en_US-amy-medium",

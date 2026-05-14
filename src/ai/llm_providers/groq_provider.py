@@ -17,13 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 class GroqProvider:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, *, api_key: str = "") -> None:
         from groq import Groq  # imported lazily; see __init__.py
 
-        env_var = config.get("groq_api_key_env", "GROQ_API_KEY")
-        api_key = os.environ.get(env_var)
         if not api_key:
-            raise RuntimeError(f"{env_var} not set")
+            env_var = config.get("groq_api_key_env", "GROQ_API_KEY")
+            api_key = os.environ.get(env_var, "")
+        if not api_key:
+            raise RuntimeError("No Groq API key found in config or environment")
 
         self._client = Groq(api_key=api_key)
         self._model = config.get("groq_model", "llama-3.3-70b-versatile")

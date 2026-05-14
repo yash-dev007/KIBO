@@ -1,5 +1,6 @@
 import { Bot } from "lucide-react";
 import type { ChatMessage } from "@/stores/chatStore";
+import { MarkdownContent } from "./MarkdownContent";
 
 type MessageBubbleProps = {
   message: ChatMessage;
@@ -27,8 +28,8 @@ export function MessageBubble({ message, isFirstInGroup = false }: MessageBubble
           <span>KIBO</span>
         </div>
       )}
-      <div className="max-w-[85%] rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-6 py-4 text-base leading-relaxed text-kibo-text shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
-        {message.text}
+      <div className="max-w-[85%] rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-6 py-4 text-base text-kibo-text shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
+        <MarkdownContent text={message.text} />
       </div>
     </div>
   );

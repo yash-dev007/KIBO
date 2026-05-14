@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Maximize, Settings, X } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { InputBar } from "./InputBar";
+import { MarkdownContent } from "./MarkdownContent";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { publishPetState } from "@/hooks/useWindowStateSync";
 import { useChatStore } from "@/stores/chatStore";
@@ -40,11 +41,13 @@ export function ChatWindow() {
   const setError = useChatStore((state) => state.setError);
   const setMood = usePetStore((state) => state.setMood);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [isListening, setIsListening] = useState(false);
 
   const handleMessage = useCallback(
     (message: MessageEvent) => {
       const event = JSON.parse(message.data) as ChatEvent;
       if (event.type === "response_chunk") {
+        setIsListening(false);
         appendStream(event.text);
         setMood("talking");
         publishPetState({ animationState: "action", mood: "talking" });
@@ -55,6 +58,7 @@ export function ChatWindow() {
         publishPetState({ animationState: "idle", mood: "idle" });
       }
       if (event.type === "error") {
+        setIsListening(false);
         setError(event.message);
         setMood("idle");
         publishPetState({ animationState: "idle", mood: "idle", speech: event.message });
@@ -94,6 +98,16 @@ export function ChatWindow() {
     setMood("thinking");
     publishPetState({ animationState: "action", mood: "thinking", speech: "" });
     socket.send({ type: "query", text });
+  }
+
+  function handleVoice() {
+    if (isListening) return;
+    setIsListening(true);
+    setError("");
+    clearStream();
+    setMood("listening");
+    publishPetState({ animationState: "action", mood: "listening", speech: "Listening…" });
+    socket.send({ type: "voice_start" });
   }
 
   const isConnected = connectionState === "open";
@@ -177,8 +191,8 @@ export function ChatWindow() {
                   <Bot size={16} />
                   <span>KIBO</span>
                 </div>
-                <div className="max-w-[85%] rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-6 py-4 text-base leading-relaxed text-kibo-text shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
-                  {streamingText}
+                <div className="max-w-[85%] rounded-[24px] rounded-bl-[6px] border border-kibo-accent-soft bg-kibo-accent-dim px-6 py-4 text-base text-kibo-text shadow-[0_2px_8px_oklch(0%_0_0_/_0.02)]">
+                  <MarkdownContent text={streamingText} />
                   <span className="cursor-blink ml-0.5 inline-block h-3.5 w-0.5 bg-kibo-accent align-middle" />
                 </div>
               </div>
@@ -196,7 +210,7 @@ export function ChatWindow() {
       </section>
 
       {/* Floating input — absolutely anchored to bottom of main */}
-      <InputBar disabled={!isConnected} onSend={send} />
+      <InputBar disabled={!isConnected} isListening={isListening} onSend={send} onVoice={handleVoice} />
     </main>
   );
 }

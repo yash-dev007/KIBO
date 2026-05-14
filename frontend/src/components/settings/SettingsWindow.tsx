@@ -6,6 +6,8 @@ import {
   ChevronDown,
   Database,
   Download,
+  Eye,
+  EyeOff,
   Mic,
   Palette,
   Save,
@@ -64,6 +66,39 @@ function TextInput({
       value={value}
       onChange={(event) => onChange(event.target.value)}
     />
+  );
+}
+
+function PasswordInput({
+  value,
+  onChange,
+  placeholder = "sk-…",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={show ? "text" : "password"}
+        className="h-10 w-full rounded-lg border border-kibo-border bg-kibo-bg px-3 pr-10 font-mono text-sm text-kibo-text outline-none transition focus:border-kibo-accent/40 focus:shadow-[0_0_0_3px_var(--color-kibo-accent-dim)]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <button
+        type="button"
+        aria-label={show ? "Hide key" : "Show key"}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-kibo-dim transition hover:text-kibo-text"
+        onClick={() => setShow((s) => !s)}
+      >
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
   );
 }
 
@@ -218,50 +253,182 @@ export function SettingsWindow() {
         </Field>
       </>
     ),
-    voice: (
-      <>
-        <Field label="TTS provider">
-          <TextInput
-            value={asString(settings.tts_provider, "mock")}
-            onChange={(value) => updateSetting("tts_provider", value)}
-          />
-        </Field>
-        <Field label="TTS rate">
-          <NumberInput
-            value={asNumber(settings.tts_rate, 175)}
-            onChange={(value) => updateSetting("tts_rate", value)}
-          />
-        </Field>
-        <Field label="Voice warmup">
-          <Toggle
-            checked={asBoolean(settings.voice_warmup_on_launch, true)}
-            onChange={(value) => updateSetting("voice_warmup_on_launch", value)}
-          />
-        </Field>
-      </>
-    ),
-    ai: (
-      <>
-        <Field label="LLM provider">
-          <TextInput
-            value={asString(settings.llm_provider, "mock")}
-            onChange={(value) => updateSetting("llm_provider", value)}
-          />
-        </Field>
-        <Field label="Ollama model">
-          <TextInput
-            value={asString(settings.ollama_model, "llama3.2:3b")}
-            onChange={(value) => updateSetting("ollama_model", value)}
-          />
-        </Field>
-        <Field label="Groq model">
-          <TextInput
-            value={asString(settings.groq_model, "llama-3.3-70b-versatile")}
-            onChange={(value) => updateSetting("groq_model", value)}
-          />
-        </Field>
-      </>
-    ),
+    voice: (() => {
+      const ttsProvider = asString(settings.tts_provider, "auto");
+      const ttsEnabled = asBoolean(settings.tts_enabled, false);
+      const isPiper = ttsProvider === "piper" || ttsProvider === "auto";
+      return (
+        <>
+          <Field label="Text-to-speech">
+            <Toggle
+              checked={ttsEnabled}
+              onChange={(value) => updateSetting("tts_enabled", value)}
+            />
+          </Field>
+
+          {ttsEnabled && (
+            <>
+              <Field label="TTS provider">
+                <CustomSelect
+                  value={ttsProvider}
+                  options={[
+                    { label: "Auto (Piper → pyttsx3)", value: "auto" },
+                    { label: "Piper (neural, local)", value: "piper" },
+                    { label: "pyttsx3 (SAPI5)", value: "pyttsx3" },
+                    { label: "Mock (silent)", value: "mock" },
+                  ]}
+                  onChange={(value) => updateSetting("tts_provider", value)}
+                />
+              </Field>
+
+              <Field label="Speech rate (words/min)">
+                <NumberInput
+                  value={asNumber(settings.tts_rate, 175)}
+                  onChange={(value) => updateSetting("tts_rate", value)}
+                />
+              </Field>
+
+              {isPiper && (
+                <>
+                  <Field label="Piper voice model">
+                    <TextInput
+                      value={asString(settings.piper_model, "en_US-amy-medium")}
+                      onChange={(value) => updateSetting("piper_model", value)}
+                    />
+                  </Field>
+                  <Field label="Piper models directory">
+                    <TextInput
+                      value={asString(settings.piper_models_dir, "models/piper")}
+                      onChange={(value) => updateSetting("piper_models_dir", value)}
+                    />
+                  </Field>
+                </>
+              )}
+
+              <Field label="Voice warmup on launch">
+                <Toggle
+                  checked={asBoolean(settings.voice_warmup_on_launch, true)}
+                  onChange={(value) => updateSetting("voice_warmup_on_launch", value)}
+                />
+              </Field>
+            </>
+          )}
+        </>
+      );
+    })(),
+    ai: (() => {
+      const provider = asString(settings.llm_provider, "auto");
+      const isGroqVisible = provider === "groq" || provider === "auto";
+      const isOllamaVisible = provider === "ollama" || provider === "auto";
+      return (
+        <>
+          <Field label="LLM provider">
+            <CustomSelect
+              value={provider}
+              options={[
+                { label: "Auto (Groq → Ollama)", value: "auto" },
+                { label: "Groq", value: "groq" },
+                { label: "OpenRouter", value: "openrouter" },
+                { label: "NVIDIA NIM", value: "nvidia" },
+                { label: "Google Gemini", value: "google" },
+                { label: "Ollama (local)", value: "ollama" },
+                { label: "Mock (testing)", value: "mock" },
+              ]}
+              onChange={(value) => updateSetting("llm_provider", value)}
+            />
+          </Field>
+
+          {isGroqVisible && (
+            <>
+              <Field label="Groq API key">
+                <PasswordInput
+                  value={asString(settings.groq_api_key, "")}
+                  onChange={(value) => updateSetting("groq_api_key", value)}
+                  placeholder="gsk_…"
+                />
+              </Field>
+              <Field label="Groq model">
+                <TextInput
+                  value={asString(settings.groq_model, "llama-3.3-70b-versatile")}
+                  onChange={(value) => updateSetting("groq_model", value)}
+                />
+              </Field>
+            </>
+          )}
+
+          {provider === "openrouter" && (
+            <>
+              <Field label="OpenRouter API key">
+                <PasswordInput
+                  value={asString(settings.openrouter_api_key, "")}
+                  onChange={(value) => updateSetting("openrouter_api_key", value)}
+                  placeholder="sk-or-…"
+                />
+              </Field>
+              <Field label="OpenRouter model">
+                <TextInput
+                  value={asString(settings.openrouter_model, "meta-llama/llama-3.3-70b-instruct")}
+                  onChange={(value) => updateSetting("openrouter_model", value)}
+                />
+              </Field>
+            </>
+          )}
+
+          {provider === "nvidia" && (
+            <>
+              <Field label="NVIDIA API key">
+                <PasswordInput
+                  value={asString(settings.nvidia_api_key, "")}
+                  onChange={(value) => updateSetting("nvidia_api_key", value)}
+                  placeholder="nvapi-…"
+                />
+              </Field>
+              <Field label="NVIDIA model">
+                <TextInput
+                  value={asString(settings.nvidia_model, "meta/llama-3.3-70b-instruct")}
+                  onChange={(value) => updateSetting("nvidia_model", value)}
+                />
+              </Field>
+            </>
+          )}
+
+          {provider === "google" && (
+            <>
+              <Field label="Google API key">
+                <PasswordInput
+                  value={asString(settings.google_api_key, "")}
+                  onChange={(value) => updateSetting("google_api_key", value)}
+                  placeholder="AIza…"
+                />
+              </Field>
+              <Field label="Google model">
+                <TextInput
+                  value={asString(settings.google_model, "gemini-2.0-flash")}
+                  onChange={(value) => updateSetting("google_model", value)}
+                />
+              </Field>
+            </>
+          )}
+
+          {isOllamaVisible && (
+            <>
+              <Field label="Ollama base URL">
+                <TextInput
+                  value={asString(settings.ollama_base_url, "http://localhost:11434")}
+                  onChange={(value) => updateSetting("ollama_base_url", value)}
+                />
+              </Field>
+              <Field label="Ollama model">
+                <TextInput
+                  value={asString(settings.ollama_model, "llama3.2:3b")}
+                  onChange={(value) => updateSetting("ollama_model", value)}
+                />
+              </Field>
+            </>
+          )}
+        </>
+      );
+    })(),
     notifications: (
       <>
         <Field label="Proactive mode">

@@ -4,10 +4,12 @@ import { useChatStore } from "@/stores/chatStore";
 
 type InputBarProps = {
   disabled?: boolean;
+  isListening?: boolean;
   onSend: (text: string) => void;
+  onVoice?: () => void;
 };
 
-export function InputBar({ disabled = false, onSend }: InputBarProps) {
+export function InputBar({ disabled = false, isListening = false, onSend, onVoice }: InputBarProps) {
   const [value, setValue] = useState("");
   const addMessage = useChatStore((state) => state.addMessage);
 
@@ -34,13 +36,19 @@ export function InputBar({ disabled = false, onSend }: InputBarProps) {
           disabled={disabled}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !disabled) submit(); }}
-          placeholder={disabled ? "KIBO is connecting…" : "Ask anything…"}
+          placeholder={isListening ? "Listening…" : disabled ? "KIBO is connecting…" : "Ask anything…"}
           autoFocus
         />
         <button
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-bg hover:text-kibo-text"
+          className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition-all ${
+            isListening
+              ? "animate-pulse bg-kibo-accent text-white shadow-[0_0_12px_var(--color-kibo-accent-glow)]"
+              : "text-kibo-dim hover:bg-kibo-bg hover:text-kibo-text"
+          } disabled:cursor-not-allowed disabled:opacity-40`}
           type="button"
-          aria-label="Voice input"
+          aria-label={isListening ? "Listening…" : "Voice input"}
+          disabled={disabled || !onVoice}
+          onClick={onVoice}
         >
           <Mic size={20} />
         </button>

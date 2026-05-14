@@ -48,11 +48,21 @@ def _try_piper(config: dict):
     try:
         from .piper_provider import PiperProvider
     except ImportError:
-        logger.warning("Piper not installed (`pip install piper-tts`); falling back.")
+        logger.warning("Piper not installed (`pip install piper-tts`); falling back to pyttsx3.")
         return None
 
     try:
         return PiperProvider(config)
+    except FileNotFoundError as exc:
+        model = config.get("piper_model", "en_US-amy-medium")
+        logger.warning(
+            "Piper voice model '%s' not found. "
+            "Download %s.onnx and %s.onnx.json from "
+            "https://github.com/rhasspy/piper/releases and place them in '%s'. "
+            "Falling back to pyttsx3.",
+            model, model, model, config.get("piper_models_dir", "models/piper"),
+        )
+        return None
     except Exception as exc:
         logger.warning("Piper init failed: %s — falling back to pyttsx3.", exc)
         return None

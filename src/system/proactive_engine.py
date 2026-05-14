@@ -115,6 +115,9 @@ class ProactiveEngine:
         )
 
     def start(self) -> None:
+        # Reset the idle clock so stale timestamps from previous sessions
+        # don't trigger "you've been away for N days" on first launch.
+        self._router.update_last_interaction()
         self._thread = PeriodicThread(60_000, self._on_tick)
         self._thread.start()
 
@@ -184,8 +187,10 @@ class ProactiveEngine:
 
         for rule in RULES:
             if rule.condition(ctx):
-                if self._event_bus:
+                msg = rule.message(ctx)
+                allowed = self._router.route(rule.type, msg, rule.priority)
+                if allowed and self._event_bus:
                     self._event_bus.emit(
-                        "proactive_notification", rule.type, rule.message(ctx), rule.priority
+                        "proactive_notification", rule.type, msg, rule.priority
                     )
                 break

@@ -206,6 +206,8 @@ def create_app(
                     ai_thread.send_query(msg.get("text", ""))
                 elif msg.get("type") == "cancel" and ai_thread is not None:
                     ai_thread.cancel_current()
+                elif msg.get("type") == "voice_start":
+                    event_bus.emit("hotkey_pressed")
         except WebSocketDisconnect:
             pass
         finally:
