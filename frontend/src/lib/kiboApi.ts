@@ -63,6 +63,16 @@ export async function apiGet<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+export async function apiDelete<T>(path: string, fallback: T): Promise<T> {
+  try {
+    const response = await fetch(`${await backendBaseUrl()}${path}`, { method: "DELETE" });
+    if (!response.ok) return fallback;
+    return (await response.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function apiPost<T>(path: string, body: unknown, fallback: T): Promise<T> {
   try {
     const response = await fetch(`${await backendBaseUrl()}${path}`, {

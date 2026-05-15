@@ -29,6 +29,27 @@ from src.api.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 
+MAX_QUERY_LENGTH = 8000  # characters; bounds disk/memory per persisted message
+ALLOWED_WS_ORIGINS = {
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+    "null",  # file:// origins (packaged Electron)
+}
+
+
+def _origin_allowed(websocket: WebSocket) -> bool:
+    """Reject WS handshakes from origins outside the allow-list.
+
+    Origin is absent for non-browser clients (e.g. tests, some Electron configs);
+    those are allowed since they cannot be spoofed by a malicious web page.
+    """
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True
+    return origin in ALLOWED_WS_ORIGINS
+
 
 class _ConnectionSet:
     """Thread-safe set of active WebSocket connections."""
@@ -61,6 +82,7 @@ def create_app(
     memory_store=None,
     task_runner=None,
     ai_thread=None,
+    conversation_store=None,
 ) -> FastAPI:
     chat_conns = _ConnectionSet()
     state_conns = _ConnectionSet()
@@ -99,6 +121,8 @@ def create_app(
     event_bus.on("response_chunk", lambda text: _forward_chat("response_chunk", text=text))
     event_bus.on("response_done", lambda text: _forward_chat("response_done", text=text))
     event_bus.on("error_occurred", lambda msg: _forward_chat("error", message=msg))
+    event_bus.on("transcript_ready", lambda text: _forward_chat("transcript_ready", text=text))
+    event_bus.on("recording_started", lambda: _forward_chat("recording_started"))
 
     def _forward_state(event_type: str, **extra):
         async def _send():
@@ -188,12 +212,52 @@ def create_app(
             task_runner.cancel_task(task_id)
         return {"ok": True}
 
+    # ── Conversations ─────────────────────────────────────────────────────
+
+    @app.get("/conversations")
+    async def get_conversations():
+        if conversation_store is None:
+            return []
+        return conversation_store.list_all()
+
+    @app.post("/conversations")
+    async def post_conversation():
+        if conversation_store is None:
+            return {"id": None}
+        conv = conversation_store.create()
+        return {"id": conv.id, "title": conv.title}
+
+    @app.get("/conversations/{conv_id}")
+    async def get_conversation(conv_id: str):
+        if conversation_store is None:
+            return None
+        conv = conversation_store.get(conv_id)
+        return conv.to_dict() if conv else None
+
+    @app.delete("/conversations/{conv_id}")
+    async def delete_conversation(conv_id: str):
+        if conversation_store is not None:
+            conversation_store.delete(conv_id)
+        return {"ok": True}
+
     # ── WebSocket /ws/chat ────────────────────────────────────────────────
 
     @app.websocket("/ws/chat")
     async def ws_chat(websocket: WebSocket):
+        if not _origin_allowed(websocket):
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
         chat_conns.add(websocket)
+
+        active_conv: list[str] = []
+
+        def _save_response(text: str) -> None:
+            if active_conv and conversation_store is not None:
+                conversation_store.add_message(active_conv[0], "assistant", text)
+
+        event_bus.on("response_done", _save_response)
+
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -201,9 +265,28 @@ def create_app(
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if msg.get("type") == "query" and ai_thread is not None:
-                    event_bus.emit("chat_query_received", msg.get("text", ""))
-                    ai_thread.send_query(msg.get("text", ""))
+
+                if msg.get("type") == "query":
+                    text = (msg.get("text") or "")[:MAX_QUERY_LENGTH]
+                    conv_id: Optional[str] = msg.get("conversation_id")
+
+                    if conversation_store is not None:
+                        if not conv_id:
+                            conv = conversation_store.create()
+                            conv_id = conv.id
+                            await websocket.send_text(json.dumps({
+                                "type": "conversation_created",
+                                "id": conv.id,
+                                "title": conv.title,
+                            }))
+                        conversation_store.add_message(conv_id, "user", text)
+                        active_conv.clear()
+                        active_conv.append(conv_id)
+
+                    if ai_thread is not None:
+                        event_bus.emit("chat_query_received", text)
+                        ai_thread.send_query(text)
+
                 elif msg.get("type") == "cancel" and ai_thread is not None:
                     ai_thread.cancel_current()
                 elif msg.get("type") == "voice_start":
@@ -211,12 +294,16 @@ def create_app(
         except WebSocketDisconnect:
             pass
         finally:
+            event_bus.off("response_done", _save_response)
             chat_conns.remove(websocket)
 
     # ── WebSocket /ws/state ───────────────────────────────────────────────
 
     @app.websocket("/ws/state")
     async def ws_state(websocket: WebSocket):
+        if not _origin_allowed(websocket):
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
         state_conns.add(websocket)
         try:

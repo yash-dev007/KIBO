@@ -11,12 +11,15 @@ type ChatState = {
   streamingText: string;
   connectionState: string;
   error: string;
+  conversationId: string | null;
   addMessage: (message: ChatMessage) => void;
+  replaceMessages: (messages: ChatMessage[]) => void;
   appendStream: (text: string) => void;
   finishStream: () => void;
   clearStream: () => void;
   setConnectionState: (connectionState: string) => void;
   setError: (error: string) => void;
+  setConversationId: (id: string | null) => void;
 };
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -24,7 +27,10 @@ export const useChatStore = create<ChatState>((set) => ({
   streamingText: "",
   connectionState: "idle",
   error: "",
+  conversationId: null,
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  replaceMessages: (messages) => set({ messages }),
+  setConversationId: (id) => set({ conversationId: id }),
   appendStream: (text) =>
     set((state) => ({ streamingText: `${state.streamingText}${text}` })),
   finishStream: () =>

@@ -38,6 +38,9 @@ def create_backend(config: dict) -> dict:
     bus = EventBus()
     config_manager = FileConfigManager()
 
+    from src.ai.conversation_store import ConversationStore
+    conversation_store = ConversationStore(get_user_data_dir())
+
     # ── Core components ───────────────────────────────────────────────────
     from src.ai.brain import Brain
     from src.ai.memory_store import MemoryStore
@@ -92,6 +95,7 @@ def create_backend(config: dict) -> dict:
 
         # Config updates for AI components
         bus.on("config_changed", ai_thread.on_config_changed)
+        bus.on("config_changed", lambda cfg: tts_thread.manager.set_enabled(cfg.get("tts_enabled", True)))
 
         # Hotkey → brain + voice
         bus.on("hotkey_pressed", brain.on_listening_started)
@@ -121,6 +125,7 @@ def create_backend(config: dict) -> dict:
         "event_bus": bus,
         "brain": brain,
         "memory_store": memory_store,
+        "conversation_store": conversation_store,
         "system_monitor": system_monitor,
         "proactive_engine": proactive_engine,
         "notification_router": notification_router,
@@ -152,6 +157,7 @@ def start(config: dict, host: str = "127.0.0.1", port: int = 8765) -> None:
         memory_store=components["memory_store"],
         task_runner=components["task_runner"],
         ai_thread=components["ai_thread"],
+        conversation_store=components["conversation_store"],
     )
 
     # Start all background components

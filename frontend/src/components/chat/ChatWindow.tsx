@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Maximize, Settings, X } from "lucide-react";
+import { Bot, Headphones, History, Maximize, Plus, Settings, Trash2, X } from "lucide-react";
+import { apiDelete, apiGet, apiPost } from "@/lib/kiboApi";
 import { MessageBubble } from "./MessageBubble";
 import { InputBar } from "./InputBar";
 import { MarkdownContent } from "./MarkdownContent";
@@ -27,25 +28,70 @@ function TypingIndicator() {
 type ChatEvent =
   | { type: "response_chunk"; text: string }
   | { type: "response_done"; text: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "transcript_ready"; text: string }
+  | { type: "recording_started" }
+  | { type: "conversation_created"; id: string; title: string };
+
+type ConversationMeta = {
+  id: string;
+  title: string;
+  updated_at: string;
+  message_count: number;
+};
+
+function formatConvDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86400000);
+  if (diffDays === 0) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: "short" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 export function ChatWindow() {
   const messages = useChatStore((state) => state.messages);
   const streamingText = useChatStore((state) => state.streamingText);
   const connectionState = useChatStore((state) => state.connectionState);
   const error = useChatStore((state) => state.error);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const replaceMessages = useChatStore((state) => state.replaceMessages);
   const appendStream = useChatStore((state) => state.appendStream);
   const clearStream = useChatStore((state) => state.clearStream);
   const finishStream = useChatStore((state) => state.finishStream);
   const setConnectionState = useChatStore((state) => state.setConnectionState);
   const setError = useChatStore((state) => state.setError);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const setConversationId = useChatStore((state) => state.setConversationId);
   const setMood = usePetStore((state) => state.setMood);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isListening, setIsListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+
+  const refreshConversations = useCallback(async () => {
+    const list = await apiGet<ConversationMeta[]>("/conversations", []);
+    setConversations(list);
+  }, []);
+
+  useEffect(() => {
+    void refreshConversations();
+  }, [refreshConversations]);
 
   const handleMessage = useCallback(
     (message: MessageEvent) => {
       const event = JSON.parse(message.data) as ChatEvent;
+      if (event.type === "recording_started") {
+        setIsListening(true);
+      }
+      if (event.type === "transcript_ready") {
+        addMessage({ id: crypto.randomUUID(), role: "user", text: event.text });
+        setIsListening(false);
+        setMood("thinking");
+        publishPetState({ animationState: "action", mood: "thinking", speech: "" });
+      }
       if (event.type === "response_chunk") {
         setIsListening(false);
         appendStream(event.text);
@@ -63,8 +109,15 @@ export function ChatWindow() {
         setMood("idle");
         publishPetState({ animationState: "idle", mood: "idle", speech: event.message });
       }
+      if (event.type === "conversation_created") {
+        setConversationId(event.id);
+        setConversations((prev) => [
+          { id: event.id, title: event.title, updated_at: new Date().toISOString(), message_count: 0 },
+          ...prev,
+        ]);
+      }
     },
-    [appendStream, finishStream, setError, setMood],
+    [addMessage, appendStream, finishStream, setConversationId, setError, setMood],
   );
 
   const socket = useWebSocket("/ws/chat", handleMessage);
@@ -97,7 +150,44 @@ export function ChatWindow() {
     clearStream();
     setMood("thinking");
     publishPetState({ animationState: "action", mood: "thinking", speech: "" });
-    socket.send({ type: "query", text });
+    socket.send({ type: "query", text, conversation_id: conversationId });
+  }
+
+  function handleNewChat() {
+    setConversationId(null);
+    replaceMessages([]);
+    clearStream();
+    setError("");
+    setMood("idle");
+    setSidebarOpen(false);
+  }
+
+  async function handleLoadConversation(id: string) {
+    type ConvData = { messages: Array<{ id: string; role: string; text: string }> };
+    const data = await apiGet<ConvData | null>(`/conversations/${id}`, null);
+    if (!data) return;
+    replaceMessages(
+      data.messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", text: m.text })),
+    );
+    clearStream();
+    setError("");
+    setConversationId(id);
+    setSidebarOpen(false);
+  }
+
+  async function handleDeleteConversation(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    await apiDelete(`/conversations/${id}`, { ok: true });
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (conversationId === id) handleNewChat();
+  }
+
+  async function toggleVoiceMode() {
+    const next = !voiceMode;
+    setVoiceMode(next);
+    await apiPost("/settings", { tts_enabled: next }, { ok: true });
   }
 
   function handleVoice() {
@@ -119,10 +209,88 @@ export function ChatWindow() {
     !error;
 
   return (
-    <main className="flex h-screen flex-col bg-kibo-bg text-kibo-text">
+    <main className="relative flex h-screen flex-col bg-kibo-bg text-kibo-text">
+
+      {/* Sidebar backdrop */}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-10 bg-black/20"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Conversation sidebar */}
+      <aside
+        className={`absolute left-0 top-0 z-20 flex h-full w-72 flex-col border-r border-kibo-border bg-kibo-surface shadow-xl transition-transform duration-200 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="drag-region flex shrink-0 items-center justify-between border-b border-kibo-border px-4 py-4">
+          <span className="text-sm font-medium text-kibo-text">Conversations</span>
+          <button
+            className="grid h-7 w-7 place-items-center rounded-full text-kibo-dim transition hover:bg-kibo-bg hover:text-kibo-text"
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="no-drag shrink-0 p-3">
+          <button
+            className="flex w-full items-center gap-2 rounded-xl border border-kibo-border bg-kibo-bg px-4 py-2.5 text-sm text-kibo-text transition hover:border-kibo-accent/40 hover:bg-kibo-accent-dim"
+            type="button"
+            onClick={handleNewChat}
+          >
+            <Plus size={15} />
+            New chat
+          </button>
+        </div>
+
+        <div className="no-drag flex-1 overflow-y-auto px-2 pb-4">
+          {conversations.length === 0 ? (
+            <p className="px-3 py-4 text-center text-xs text-kibo-dim">No conversations yet</p>
+          ) : (
+            conversations.map((conv) => (
+              <button
+                key={conv.id}
+                type="button"
+                className={`group flex w-full items-start justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-kibo-bg ${
+                  conversationId === conv.id ? "bg-kibo-accent-dim" : ""
+                }`}
+                onClick={() => handleLoadConversation(conv.id)}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className={`truncate text-sm ${conversationId === conv.id ? "font-medium text-kibo-accent" : "text-kibo-text"}`}>
+                    {conv.title}
+                  </p>
+                  <p className="mt-0.5 text-xs text-kibo-dim">{formatConvDate(conv.updated_at)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="mt-0.5 shrink-0 text-kibo-dim opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                  aria-label="Delete conversation"
+                  onClick={(e) => handleDeleteConversation(conv.id, e)}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+
       {/* Draggable header */}
       <header className="drag-region flex shrink-0 items-center justify-between px-6 py-4">
         <div className="no-drag flex items-center gap-3">
+          <button
+            className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
+            type="button"
+            aria-label="Conversation history"
+            onClick={() => { setSidebarOpen(true); void refreshConversations(); }}
+          >
+            <History size={18} />
+          </button>
           <span
             className={`h-2 w-2 rounded-full transition-all ${
               isConnected
@@ -133,6 +301,19 @@ export function ChatWindow() {
           <span className="font-display text-xl italic tracking-tight text-kibo-text">KIBO</span>
         </div>
         <div className="no-drag flex gap-1">
+          <button
+            className={`grid h-9 w-9 place-items-center rounded-full transition-all ${
+              voiceMode
+                ? "bg-kibo-accent text-white shadow-[0_0_10px_var(--color-kibo-accent-glow)]"
+                : "text-kibo-dim hover:bg-kibo-surface hover:text-kibo-text"
+            }`}
+            type="button"
+            aria-label={voiceMode ? "Voice mode on — click to disable" : "Enable voice mode"}
+            aria-pressed={voiceMode}
+            onClick={toggleVoiceMode}
+          >
+            <Headphones size={18} />
+          </button>
           <button
             className="grid h-9 w-9 place-items-center rounded-full text-kibo-dim transition-all hover:bg-kibo-surface hover:text-kibo-text"
             type="button"
