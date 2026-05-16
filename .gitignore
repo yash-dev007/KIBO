@@ -46,3 +46,6 @@ REF_PROJECT/
 
 # Git worktrees
 .worktrees/
+
+# Config private files
+config.json
