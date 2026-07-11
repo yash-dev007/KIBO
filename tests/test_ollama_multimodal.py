@@ -1,6 +1,6 @@
-"""Regression tests for Ollama-native multimodal image routing (issue #4723).
+﻿"""Regression tests for Ollama-native multimodal image routing (issue #4723).
 
-Odysseus builds user messages in OpenAI style::
+Zephyrus builds user messages in OpenAI style::
 
     {"role": "user", "content": [
         {"type": "text", "text": "..."},

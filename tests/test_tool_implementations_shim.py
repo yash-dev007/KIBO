@@ -1,4 +1,4 @@
-"""Protection test: the tool_implementations compatibility shim must keep
+﻿"""Protection test: the tool_implementations compatibility shim must keep
 re-exporting every symbol importers depend on.
 
 Guards the slice-1 split (tool_implementations.py -> src/tools/*) from
@@ -138,7 +138,7 @@ def test_every_facade_import_in_repo_resolves():
     # non-source trees (venvs, caches, data, build artifacts) in-place.
     _SKIP_DIRS = {
         "__pycache__", "venv", "node_modules", "data", "logs",
-        "odysseus.egg-info", "static", "specs", "licenses", "docker",
+        "zephyrus.egg-info", "static", "specs", "licenses", "docker",
     }
     names = set()
     for root, _dirs, files in os.walk(repo):

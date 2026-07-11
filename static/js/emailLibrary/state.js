@@ -1,4 +1,4 @@
-// static/js/emailLibrary/state.js
+﻿// static/js/emailLibrary/state.js
 //
 // Shared mutable state for the email-library popup. Keeping these on a
 // single exported object lets sibling modules (utils, signatureFold,
@@ -25,7 +25,7 @@ export const state = {
   _libFilter: 'all',             // all, unread, unanswered
   _libSort: 'recent',            // recent, unread, favorites
   _libHasAttachments: false,
-  _libShowTags: localStorage.getItem('odysseus.email.showTags') !== '0',
+  _libShowTags: localStorage.getItem('zephyrus.email.showTags') !== '0',
   _libLoading: false,
   _docModule: null,
   _onEmailClick: null,

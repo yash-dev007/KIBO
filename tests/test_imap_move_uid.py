@@ -1,4 +1,4 @@
-"""_imap_move must address messages by UID, not sequence number.
+﻿"""_imap_move must address messages by UID, not sequence number.
 
 The auto-spam poller passes a real IMAP UID (from conn.uid("SEARCH", ...))
 to _imap_move, but the function used conn.copy()/conn.store(), which operate
@@ -15,7 +15,7 @@ import pytest
 @pytest.fixture
 def email_helpers(monkeypatch, tmp_path):
     # Keep _init_scheduled_db (run at import) off the real data dir.
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ZEPHYRUS_DATA_DIR", str(tmp_path))
     import routes.email_helpers as eh
     return eh
 

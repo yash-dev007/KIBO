@@ -1,22 +1,22 @@
-{
-  "name": "odysseus",
+﻿{
+  "name": "zephyrus",
   "version": "0.1.1",
-  "description": "Connect Codex to a scoped Odysseus instance.",
+  "description": "Connect Codex to a scoped Zephyrus instance.",
   "author": {
-    "name": "Odysseus"
+    "name": "Zephyrus"
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "Odysseus",
-    "shortDescription": "Use scoped Odysseus tools from Codex.",
-    "longDescription": "Connects Codex terminal sessions to Odysseus through user-controlled scoped API tokens. Codex must use /api/codex/* endpoints so Odysseus Settings can enforce tool access.",
-    "developerName": "Odysseus",
+    "displayName": "Zephyrus",
+    "shortDescription": "Use scoped Zephyrus tools from Codex.",
+    "longDescription": "Connects Codex terminal sessions to Zephyrus through user-controlled scoped API tokens. Codex must use /api/codex/* endpoints so Zephyrus Settings can enforce tool access.",
+    "developerName": "Zephyrus",
     "category": "Productivity",
     "capabilities": [
       "todos",
       "email",
       "scoped-api"
     ],
-    "defaultPrompt": "Use Odysseus only through configured scoped access. Check capabilities before reading or writing data."
+    "defaultPrompt": "Use Zephyrus only through configured scoped access. Check capabilities before reading or writing data."
   }
 }

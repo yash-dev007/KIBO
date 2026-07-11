@@ -1,4 +1,4 @@
-# ---- builder: patch + build wheels for Real-ESRGAN's broken-on-3.14 deps ----
+﻿# ---- builder: patch + build wheels for Real-ESRGAN's broken-on-3.14 deps ----
 # basicsr/gfpgan/facexlib read their version via exec()+locals()['__version__'],
 # which raises KeyError on Python 3.13+ (PEP 667). Build patched wheels here so
 # the final image / Cookbook never has to compile the broken sdists. See
@@ -86,9 +86,9 @@ RUN pip install --no-cache-dir python-magic==0.4.27
 # pulled only when realesrgan is actually installed). With these dists already
 # satisfied, the Cookbook's plain `pip install realesrgan` resolves them from
 # wheels instead of rebuilding the sdists that fail on Python 3.14.
-COPY --from=realesrgan-wheels /wheels/ /tmp/odysseus-wheels/
-RUN pip install --no-cache-dir --no-deps /tmp/odysseus-wheels/*.whl \
-    && rm -rf /tmp/odysseus-wheels
+COPY --from=realesrgan-wheels /wheels/ /tmp/zephyrus-wheels/
+RUN pip install --no-cache-dir --no-deps /tmp/zephyrus-wheels/*.whl \
+    && rm -rf /tmp/zephyrus-wheels
 
 # Copy app code
 COPY . .

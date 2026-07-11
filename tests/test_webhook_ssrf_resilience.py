@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 from datetime import datetime
@@ -109,7 +109,7 @@ async def test_webhook_delivery_uses_naive_utc_timestamps(monkeypatch):
     async def _fake_send(url, body, headers, ip):
         captured["content"] = body
         captured["ip"] = str(ip)
-        assert headers["X-Odysseus-Event"] == "webhook.test"
+        assert headers["X-Zephyrus-Event"] == "webhook.test"
         return _Response()
 
     monkeypatch.setattr(manager, "_send_request", _fake_send)

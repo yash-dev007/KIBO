@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 # Entrypoint that fixes the #1 self-host footgun: a Docker container
 # that runs as root writes root-owned files into bind-mounted host
 # volumes, and the host user (or a non-root service user) then can't
@@ -18,23 +18,23 @@ PYTHON_BIN="$(command -v python)"
 
 # Reuse an existing matching group/user if the host's UID/GID already
 # corresponds to one in /etc/passwd (e.g. when the image is rebuilt
-# and "odysseus" already exists at the same id). Otherwise create.
+# and "zephyrus" already exists at the same id). Otherwise create.
 if ! getent group "$PGID" >/dev/null 2>&1; then
-    groupadd -g "$PGID" odysseus
+    groupadd -g "$PGID" zephyrus
 fi
 if ! getent passwd "$PUID" >/dev/null 2>&1; then
-    useradd -u "$PUID" -g "$PGID" -M -s /bin/sh -d /app odysseus
+    useradd -u "$PUID" -g "$PGID" -M -s /bin/sh -d /app zephyrus
 fi
 
 ODY_USER="$(getent passwd "$PUID" | cut -d: -f1)"
-[ -z "$ODY_USER" ] && ODY_USER=odysseus
+[ -z "$ODY_USER" ] && ODY_USER=zephyrus
 
 # Docker-socket group plumbing for the explicit host-Docker overlay. When
 # opted in, the socket is owned by root:<host docker gid>. Add the app user
 # to that group and later call gosu by username so supplementary groups are
 # retained.
 DOCKER_SOCK="${DOCKER_SOCK:-/var/run/docker.sock}"
-if [ "${ODYSSEUS_ENABLE_HOST_DOCKER:-}" = "true" ] && [ -S "$DOCKER_SOCK" ]; then
+if [ "${ZEPHYRUS_ENABLE_HOST_DOCKER:-}" = "true" ] && [ -S "$DOCKER_SOCK" ]; then
     SOCK_GID="$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || echo '')"
     if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
         if ! getent group "$SOCK_GID" >/dev/null 2>&1; then

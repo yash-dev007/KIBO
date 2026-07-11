@@ -1,4 +1,4 @@
-"""A send-only (SMTP-only) account has no inbox to read.
+﻿"""A send-only (SMTP-only) account has no inbox to read.
 
 `_imap_connect` must fail fast with a clear, typed error instead of handing an
 empty host to imaplib — `imaplib.IMAP4("", 993)` silently dials localhost:993
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-_tmp_data = Path(tempfile.mkdtemp(prefix="odysseus-email-send-only-test-"))
+_tmp_data = Path(tempfile.mkdtemp(prefix="zephyrus-email-send-only-test-"))
 os.environ.setdefault("DATA_DIR", str(_tmp_data))
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp_data / 'app.db'}")
 

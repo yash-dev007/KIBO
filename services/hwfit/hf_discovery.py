@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import re
 import time
@@ -281,7 +281,7 @@ def fetch_collection_models(source, timeout=20, max_pages=20):
     models = {}
     pages = 0
     while url and pages < max_pages:
-        req = urllib.request.Request(url, headers={"User-Agent": "odysseus-hwfit/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "zephyrus-hwfit/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.load(resp)
             url = _next_link(resp.headers.get("Link"))

@@ -1,4 +1,4 @@
-"""System-domain tool implementations.
+﻿"""System-domain tool implementations.
 
 Extracted from tool_implementations.py as part of slice 1 (#4082/#4071).
 Holds the skills/tasks tools plus the generic API bridges (api_call, app_api).
@@ -561,7 +561,7 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
 
 
 async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
-    """Generic loopback to allowed internal Odysseus API endpoints. Lets the
+    """Generic loopback to allowed internal Zephyrus API endpoints. Lets the
     agent reach the full UI-button surface (cookbook, email, notes,
     calendar, skills, sessions, gallery, research, etc.) without us
     landing a named tool wrapper for every one.

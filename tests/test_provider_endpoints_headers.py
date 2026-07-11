@@ -1,4 +1,4 @@
-"""Provider endpoint auth-header tests.
+﻿"""Provider endpoint auth-header tests.
 
 Covers ``build_headers`` for every provider: Anthropic (x-api-key + version
 header), OpenAI-style providers (Bearer token), OpenRouter (Bearer + attribution
@@ -42,7 +42,7 @@ def test_headers_openrouter_adds_attribution():
     assert h["Authorization"] == "Bearer secret"
     # OpenRouter ranks/labels apps via these headers.
     assert h["HTTP-Referer"].startswith("https://github.com/")
-    assert h["X-OpenRouter-Title"] == "Odysseus"
+    assert h["X-OpenRouter-Title"] == "Zephyrus"
 
 
 def test_headers_omit_authorization_when_no_key():
