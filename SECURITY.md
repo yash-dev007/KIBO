@@ -1,6 +1,6 @@
 # Security Policy
 
-Odysseus is a self-hosted AI workspace with privileged local capabilities. Please do not run it as a public, unauthenticated service.
+Zephyrus is a self-hosted AI workspace with privileged local capabilities. Please do not run it as a public, unauthenticated service.
 
 ## Supported Versions
 
